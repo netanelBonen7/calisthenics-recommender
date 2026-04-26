@@ -6,15 +6,17 @@ import socket
 
 import pytest
 
-from calisthenics_recommender.application.exercise_text_builder import (
-    build_exercise_text,
-)
 from calisthenics_recommender.application.query_builder import build_query_text
 
 
 def get_exercise_model():
     module = import_module("calisthenics_recommender.domain.exercise")
     return getattr(module, "Exercise")
+
+
+def get_embedded_exercise_model():
+    module = import_module("calisthenics_recommender.domain.embedded_exercise")
+    return getattr(module, "EmbeddedExercise")
 
 
 def get_user_request_model():
@@ -56,14 +58,34 @@ def valid_user_request(available_equipment: list[str] | None = None):
     )
 
 
-class InMemoryExerciseRepository:
-    def __init__(self, exercises):
-        self._exercises = list(exercises)
+def embedded_exercise(
+    name: str,
+    *,
+    description: str,
+    families: list[str],
+    materials: list[str],
+    categories: list[str],
+    embedding: list[float],
+):
+    EmbeddedExercise = get_embedded_exercise_model()
+    exercise = exercise_named(
+        name,
+        description=description,
+        families=families,
+        materials=materials,
+        categories=categories,
+    )
+    return EmbeddedExercise(exercise=exercise, embedding=embedding)
+
+
+class InMemoryEmbeddedExerciseRepository:
+    def __init__(self, embedded_exercises):
+        self._embedded_exercises = list(embedded_exercises)
         self.calls = 0
 
-    def list_exercises(self):
+    def list_embedded_exercises(self):
         self.calls += 1
-        return self._exercises
+        return self._embedded_exercises
 
 
 class RecordingEmbeddingProvider:
@@ -88,7 +110,7 @@ def test_recommend_exercises_accepts_expected_arguments():
 
     assert list(inspect.signature(recommend_exercises).parameters) == [
         "user_request",
-        "exercise_repository",
+        "embedded_exercise_repository",
         "embedding_provider",
         "limit",
     ]
@@ -97,43 +119,42 @@ def test_recommend_exercises_accepts_expected_arguments():
 def test_recommend_exercises_returns_ranked_recommendations_with_filtering_and_limit():
     recommend_exercises = get_recommend_exercises()
     user_request = valid_user_request()
-    pull_up = exercise_named(
+    pull_up = embedded_exercise(
         "Pull Up",
         description="A strict vertical pulling movement on a bar.",
         families=["Pull-up"],
         materials=["Bar"],
         categories=["Upper Body Pull"],
+        embedding=[0.95, 0.05],
     )
-    body_row = exercise_named(
+    body_row = embedded_exercise(
         "Body Row",
         description="A horizontal pull that builds pulling volume.",
         families=["Pull-up"],
         materials=["Bar"],
         categories=["Upper Body Pull"],
+        embedding=[0.80, 0.20],
     )
-    hollow_body_hold = exercise_named(
+    hollow_body_hold = embedded_exercise(
         "Hollow Body Hold",
         description="A core position drill for body tension.",
         families=["Core"],
         materials=[],
         categories=["Core"],
+        embedding=[0.0, 1.0],
     )
-    ring_pull_up = exercise_named(
+    ring_pull_up = embedded_exercise(
         "Ring Pull Up",
         description="A pulling variation that requires rings.",
         families=["Pull-up"],
         materials=["Rings"],
         categories=["Upper Body Pull"],
+        embedding=[1.0, 0.0],
     )
-    repository = InMemoryExerciseRepository(
+    repository = InMemoryEmbeddedExerciseRepository(
         [pull_up, body_row, hollow_body_hold, ring_pull_up]
     )
-    embeddings = {
-        build_query_text(user_request): [1.0, 0.0],
-        build_exercise_text(pull_up): [0.95, 0.05],
-        build_exercise_text(body_row): [0.80, 0.20],
-        build_exercise_text(hollow_body_hold): [0.0, 1.0],
-    }
+    embeddings = {build_query_text(user_request): [1.0, 0.0]}
     embedding_provider = RecordingEmbeddingProvider(embeddings)
 
     recommendations = recommend_exercises(
@@ -152,39 +173,30 @@ def test_recommend_exercises_returns_ranked_recommendations_with_filtering_and_l
         recommendation.exercise_name != "Ring Pull Up"
         for recommendation in recommendations
     )
-    assert embedding_provider.calls == [
-        build_query_text(user_request),
-        build_exercise_text(pull_up),
-        build_exercise_text(body_row),
-        build_exercise_text(hollow_body_hold),
-    ]
+    assert embedding_provider.calls == [build_query_text(user_request)]
 
 
 def test_recommend_exercises_returns_the_full_recommendation_shape_in_the_happy_path():
     recommend_exercises = get_recommend_exercises()
     user_request = valid_user_request()
-    pull_up = exercise_named(
+    pull_up = embedded_exercise(
         "Pull Up",
         description="A strict vertical pulling movement on a bar.",
         families=["Pull-up"],
         materials=["Bar"],
         categories=["Upper Body Pull"],
+        embedding=[0.95, 0.05],
     )
-    body_row = exercise_named(
+    body_row = embedded_exercise(
         "Body Row",
         description="A horizontal pull that builds pulling volume.",
         families=["Pull-up"],
         materials=["Bar"],
         categories=["Upper Body Pull"],
+        embedding=[0.80, 0.20],
     )
-    repository = InMemoryExerciseRepository([pull_up, body_row])
-    embedding_provider = RecordingEmbeddingProvider(
-        {
-            build_query_text(user_request): [1.0, 0.0],
-            build_exercise_text(pull_up): [0.95, 0.05],
-            build_exercise_text(body_row): [0.80, 0.20],
-        }
-    )
+    repository = InMemoryEmbeddedExerciseRepository([pull_up, body_row])
+    embedding_provider = RecordingEmbeddingProvider({build_query_text(user_request): [1.0, 0.0]})
 
     first_recommendation = recommend_exercises(
         user_request,
@@ -207,7 +219,7 @@ def test_recommend_exercises_returns_the_full_recommendation_shape_in_the_happy_
 def test_recommend_exercises_returns_an_empty_list_when_repository_is_empty():
     recommend_exercises = get_recommend_exercises()
     user_request = valid_user_request()
-    repository = InMemoryExerciseRepository([])
+    repository = InMemoryEmbeddedExerciseRepository([])
     embedding_provider = RecordingEmbeddingProvider({})
 
     recommendations = recommend_exercises(
@@ -225,21 +237,23 @@ def test_recommend_exercises_returns_an_empty_list_when_repository_is_empty():
 def test_recommend_exercises_returns_an_empty_list_when_no_exercises_match_equipment():
     recommend_exercises = get_recommend_exercises()
     user_request = valid_user_request(available_equipment=["Parallettes"])
-    repository = InMemoryExerciseRepository(
+    repository = InMemoryEmbeddedExerciseRepository(
         [
-            exercise_named(
+            embedded_exercise(
                 "Pull Up",
                 description="A strict vertical pulling movement on a bar.",
                 families=["Pull-up"],
                 materials=["Bar"],
                 categories=["Upper Body Pull"],
+                embedding=[0.95, 0.05],
             ),
-            exercise_named(
+            embedded_exercise(
                 "Ring Dip",
                 description="A dip variation that requires rings.",
                 families=["Dip"],
                 materials=["Rings"],
                 categories=["Upper Body Push"],
+                embedding=[0.0, 1.0],
             ),
         ]
     )
@@ -260,23 +274,19 @@ def test_recommend_exercises_returns_an_empty_list_when_no_exercises_match_equip
 def test_recommend_exercises_raises_for_invalid_limits_without_embedding_work(limit):
     recommend_exercises = get_recommend_exercises()
     user_request = valid_user_request()
-    repository = InMemoryExerciseRepository(
+    repository = InMemoryEmbeddedExerciseRepository(
         [
-            exercise_named(
+            embedded_exercise(
                 "Pull Up",
                 description="A strict vertical pulling movement on a bar.",
                 families=["Pull-up"],
                 materials=["Bar"],
                 categories=["Upper Body Pull"],
+                embedding=[0.95, 0.05],
             )
         ]
     )
-    embedding_provider = RecordingEmbeddingProvider(
-        {
-            build_query_text(user_request): [1.0, 0.0],
-            build_exercise_text(repository.list_exercises()[0]): [0.95, 0.05],
-        }
-    )
+    embedding_provider = RecordingEmbeddingProvider({build_query_text(user_request): [1.0, 0.0]})
     repository.calls = 0
 
     with pytest.raises(ValueError, match="limit"):
@@ -294,19 +304,16 @@ def test_recommend_exercises_raises_for_invalid_limits_without_embedding_work(li
 def test_recommend_exercises_raises_a_clear_error_when_the_query_embedding_is_missing():
     recommend_exercises = get_recommend_exercises()
     user_request = valid_user_request()
-    exercise = exercise_named(
+    exercise = embedded_exercise(
         "Pull Up",
         description="A strict vertical pulling movement on a bar.",
         families=["Pull-up"],
         materials=["Bar"],
         categories=["Upper Body Pull"],
+        embedding=[0.95, 0.05],
     )
-    repository = InMemoryExerciseRepository([exercise])
-    embedding_provider = RecordingEmbeddingProvider(
-        {
-            build_exercise_text(exercise): [0.95, 0.05],
-        }
-    )
+    repository = InMemoryEmbeddedExerciseRepository([exercise])
+    embedding_provider = RecordingEmbeddingProvider({})
 
     with pytest.raises(KeyError, match="Unknown text"):
         recommend_exercises(
@@ -317,57 +324,63 @@ def test_recommend_exercises_raises_a_clear_error_when_the_query_embedding_is_mi
         )
 
 
-def test_recommend_exercises_raises_a_clear_error_when_an_exercise_embedding_is_missing():
+def test_recommend_exercises_supports_duplicate_exercise_names_when_vectors_are_precomputed():
     recommend_exercises = get_recommend_exercises()
     user_request = valid_user_request()
-    exercise = exercise_named(
+    first_exercise = embedded_exercise(
         "Pull Up",
         description="A strict vertical pulling movement on a bar.",
         families=["Pull-up"],
         materials=["Bar"],
         categories=["Upper Body Pull"],
+        embedding=[0.95, 0.05],
     )
-    repository = InMemoryExerciseRepository([exercise])
-    embedding_provider = RecordingEmbeddingProvider(
-        {
-            build_query_text(user_request): [1.0, 0.0],
-        }
+    second_exercise = embedded_exercise(
+        "Pull Up",
+        description="A pulling variation with the same display name.",
+        families=["Pull-up"],
+        materials=["Bar"],
+        categories=["Upper Body Pull"],
+        embedding=[0.0, 1.0],
+    )
+    repository = InMemoryEmbeddedExerciseRepository([first_exercise, second_exercise])
+    embedding_provider = RecordingEmbeddingProvider({build_query_text(user_request): [1.0, 0.0]})
+
+    recommendations = recommend_exercises(
+        user_request,
+        repository,
+        embedding_provider,
+        limit=2,
     )
 
-    with pytest.raises(KeyError, match="Unknown text"):
-        recommend_exercises(
-            user_request,
-            repository,
-            embedding_provider,
-            limit=1,
-        )
+    assert [recommendation.exercise_name for recommendation in recommendations] == [
+        "Pull Up",
+        "Pull Up",
+    ]
+    assert [recommendation.match_score for recommendation in recommendations] == [100, 0]
 
 
 def test_recommend_exercises_logs_only_safe_operational_counts(caplog):
     recommend_exercises = get_recommend_exercises()
     user_request = valid_user_request()
-    pull_up = exercise_named(
+    pull_up = embedded_exercise(
         "Pull Up",
         description="A strict vertical pulling movement on a bar.",
         families=["Pull-up"],
         materials=["Bar"],
         categories=["Upper Body Pull"],
+        embedding=[0.95, 0.05],
     )
-    body_row = exercise_named(
+    body_row = embedded_exercise(
         "Body Row",
         description="A horizontal pull that builds pulling volume.",
         families=["Pull-up"],
         materials=["Bar"],
         categories=["Upper Body Pull"],
+        embedding=[0.80, 0.20],
     )
-    repository = InMemoryExerciseRepository([pull_up, body_row])
-    embedding_provider = RecordingEmbeddingProvider(
-        {
-            build_query_text(user_request): [1.0, 0.0],
-            build_exercise_text(pull_up): [0.95, 0.05],
-            build_exercise_text(body_row): [0.80, 0.20],
-        }
-    )
+    repository = InMemoryEmbeddedExerciseRepository([pull_up, body_row])
+    embedding_provider = RecordingEmbeddingProvider({build_query_text(user_request): [1.0, 0.0]})
 
     with caplog.at_level("INFO"):
         recommend_exercises(
@@ -378,14 +391,13 @@ def test_recommend_exercises_logs_only_safe_operational_counts(caplog):
         )
 
     assert caplog.messages == [
-        "Loaded 2 exercises from repository",
-        "Filtered exercises down to 2 candidates",
+        "Loaded 2 embedded exercises from repository",
+        "Filtered embedded exercises down to 2 candidates",
         "Returning 2 recommendations",
     ]
     assert user_request.goal not in caplog.text
     assert user_request.current_level not in caplog.text
     assert build_query_text(user_request) not in caplog.text
-    assert build_exercise_text(pull_up) not in caplog.text
     assert "[1.0, 0.0]" not in caplog.text
 
 
@@ -394,31 +406,28 @@ def test_recommend_exercises_is_deterministic_and_does_not_mutate_inputs_or_touc
 ):
     recommend_exercises = get_recommend_exercises()
     user_request = valid_user_request()
-    exercises = [
-        exercise_named(
+    embedded_exercises = [
+        embedded_exercise(
             "Pull Up",
             description="A strict vertical pulling movement on a bar.",
             families=["Pull-up"],
             materials=["Bar"],
             categories=["Upper Body Pull"],
+            embedding=[0.95, 0.05],
         ),
-        exercise_named(
+        embedded_exercise(
             "Body Row",
             description="A horizontal pull that builds pulling volume.",
             families=["Pull-up"],
             materials=["Bar"],
             categories=["Upper Body Pull"],
+            embedding=[0.80, 0.20],
         ),
     ]
-    repository = InMemoryExerciseRepository(exercises)
-    embeddings = {
-        build_query_text(user_request): [1.0, 0.0],
-        build_exercise_text(exercises[0]): [0.95, 0.05],
-        build_exercise_text(exercises[1]): [0.80, 0.20],
-    }
-    embedding_provider = RecordingEmbeddingProvider(embeddings)
+    repository = InMemoryEmbeddedExerciseRepository(embedded_exercises)
+    embedding_provider = RecordingEmbeddingProvider({build_query_text(user_request): [1.0, 0.0]})
     original_user_request = deepcopy(user_request)
-    original_repository_data = deepcopy(repository.list_exercises())
+    original_repository_data = deepcopy(repository.list_embedded_exercises())
     original_embeddings = deepcopy(embedding_provider.embeddings)
 
     def fail(*args, **kwargs):
@@ -435,5 +444,5 @@ def test_recommend_exercises_is_deterministic_and_does_not_mutate_inputs_or_touc
 
     assert first == second
     assert user_request == original_user_request
-    assert repository.list_exercises() == original_repository_data
+    assert repository.list_embedded_exercises() == original_repository_data
     assert embedding_provider.embeddings == original_embeddings

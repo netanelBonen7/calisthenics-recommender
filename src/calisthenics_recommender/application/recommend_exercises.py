@@ -4,20 +4,20 @@ from typing import Sequence
 from calisthenics_recommender.application.explanation_builder import (
     build_explanation,
 )
-from calisthenics_recommender.application.exercise_text_builder import (
-    build_exercise_text,
-)
-from calisthenics_recommender.application.filters import filter_exercises_by_equipment
+from calisthenics_recommender.application.filters import exercise_matches_equipment
 from calisthenics_recommender.application.query_builder import build_query_text
 from calisthenics_recommender.application.retriever import RetrievalResult
 from calisthenics_recommender.application.retriever import retrieve_top_matches
+from calisthenics_recommender.domain.embedded_exercise import EmbeddedExercise
 from calisthenics_recommender.domain.recommendation import (
     CategoryFamily,
     Recommendation,
 )
 from calisthenics_recommender.domain.user_request import UserRequest
 from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
-from calisthenics_recommender.ports.exercise_repository import ExerciseRepository
+from calisthenics_recommender.ports.embedded_exercise_repository import (
+    EmbeddedExerciseRepository,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -25,41 +25,51 @@ logger = logging.getLogger(__name__)
 
 def recommend_exercises(
     user_request: UserRequest,
-    exercise_repository: ExerciseRepository,
+    embedded_exercise_repository: EmbeddedExerciseRepository,
     embedding_provider: EmbeddingProvider,
     limit: int,
 ) -> list[Recommendation]:
     if limit <= 0:
         raise ValueError("limit must be greater than 0")
 
-    exercises = list(exercise_repository.list_exercises())
-    logger.info("Loaded %d exercises from repository", len(exercises))
+    embedded_exercises = list(
+        embedded_exercise_repository.list_embedded_exercises()
+    )
+    logger.info("Loaded %d embedded exercises from repository", len(embedded_exercises))
 
-    filtered_exercises = filter_exercises_by_equipment(
-        exercises, user_request.available_equipment
+    filtered_embedded_exercises = _filter_embedded_exercises_by_equipment(
+        embedded_exercises, user_request.available_equipment
     )
     logger.info(
-        "Filtered exercises down to %d candidates", len(filtered_exercises)
+        "Filtered embedded exercises down to %d candidates",
+        len(filtered_embedded_exercises),
     )
 
-    if not filtered_exercises:
+    if not filtered_embedded_exercises:
         logger.info("Returning %d recommendations", 0)
         return []
 
     query_embedding = embedding_provider.embed(build_query_text(user_request))
-    exercise_embeddings = {
-        exercise.name: embedding_provider.embed(build_exercise_text(exercise))
-        for exercise in filtered_exercises
-    }
     retrieval_results = retrieve_top_matches(
         query_embedding=query_embedding,
-        exercises=filtered_exercises,
-        exercise_embeddings=exercise_embeddings,
+        embedded_exercises=filtered_embedded_exercises,
         limit=limit,
     )
     recommendations = build_recommendations(user_request, retrieval_results)
     logger.info("Returning %d recommendations", len(recommendations))
     return recommendations
+
+
+def _filter_embedded_exercises_by_equipment(
+    embedded_exercises: Sequence[EmbeddedExercise], available_equipment: list[str]
+) -> list[EmbeddedExercise]:
+    return [
+        embedded_exercise
+        for embedded_exercise in embedded_exercises
+        if exercise_matches_equipment(
+            embedded_exercise.exercise, available_equipment
+        )
+    ]
 
 
 def build_recommendation(

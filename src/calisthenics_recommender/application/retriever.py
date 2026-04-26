@@ -1,7 +1,8 @@
 from dataclasses import dataclass
-from typing import Mapping, Sequence
+from typing import Sequence
 
 from calisthenics_recommender.application.similarity import cosine_similarity
+from calisthenics_recommender.domain.embedded_exercise import EmbeddedExercise
 from calisthenics_recommender.domain.exercise import Exercise
 
 
@@ -13,20 +14,16 @@ class RetrievalResult:
 
 def retrieve_top_matches(
     query_embedding: Sequence[float],
-    exercises: Sequence[Exercise],
-    exercise_embeddings: Mapping[str, Sequence[float]],
+    embedded_exercises: Sequence[EmbeddedExercise],
     limit: int,
 ) -> list[RetrievalResult]:
     scored_results: list[RetrievalResult] = []
 
-    for exercise in exercises:
-        try:
-            exercise_embedding = exercise_embeddings[exercise.name]
-        except KeyError as error:
-            raise KeyError(f"missing embedding for exercise '{exercise.name}'") from error
-
-        score = cosine_similarity(query_embedding, exercise_embedding)
-        scored_results.append(RetrievalResult(exercise=exercise, score=score))
+    for embedded_exercise in embedded_exercises:
+        score = cosine_similarity(query_embedding, embedded_exercise.embedding)
+        scored_results.append(
+            RetrievalResult(exercise=embedded_exercise.exercise, score=score)
+        )
 
     ranked_results = sorted(scored_results, key=lambda result: result.score, reverse=True)
     return ranked_results[:limit]
