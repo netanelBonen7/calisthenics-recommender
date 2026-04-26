@@ -3,6 +3,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
     LocalEmbeddedExerciseRepository,
 )
@@ -163,3 +165,67 @@ def test_build_exercise_cache_main_supports_sentence_transformer_mode_without_re
         "embedding_dimension": 3,
         "text_builder_version": "v1",
     }
+
+
+REAL_DATASET_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "data"
+    / "raw"
+    / "calisthenics_exercises.csv"
+)
+
+
+@pytest.mark.skipif(
+    not REAL_DATASET_PATH.exists(),
+    reason="Local real dataset file is not available.",
+)
+def test_build_exercise_cache_main_smoke_builds_cache_from_local_real_dataset(tmp_path):
+    module = load_build_exercise_cache_module()
+    cache_path = tmp_path / "embedded_exercises.jsonl"
+
+    exit_code = module.main(
+        [
+            "--input-csv",
+            str(REAL_DATASET_PATH),
+            "--output-cache",
+            str(cache_path),
+            "--embedding-model",
+            "fake-hash-v1",
+            "--embedding-dimension",
+            "4",
+            "--text-builder-version",
+            "v1",
+        ]
+    )
+
+    assert exit_code == 0
+    assert cache_path.exists()
+
+    embedded_exercises = list(
+        LocalEmbeddedExerciseRepository(cache_path).iter_embedded_exercises()
+    )
+
+    assert len(embedded_exercises) == 104
+
+    exercises_by_name = {
+        item.exercise.name: item.exercise for item in embedded_exercises
+    }
+
+    assert exercises_by_name["360° Pull"].muscle_groups == [
+        "Back",
+        "Shoulders",
+        "Biceps",
+        "Core",
+    ]
+    assert exercises_by_name["360° Pull"].families == ["Pull-up"]
+    assert exercises_by_name["360° Pull"].materials == ["Bar"]
+    assert exercises_by_name["360° Pull"].categories == ["Upper Body Pull"]
+
+    assert exercises_by_name["Adv Tuck Flag"].muscle_groups == [
+        "Obliques",
+        "Core",
+        "Shoulders",
+    ]
+    assert exercises_by_name["Adv Tuck Flag"].families == ["Human Flag"]
+    assert exercises_by_name["Adv Tuck Flag"].materials == ["Vertical Bar"]
+    assert exercises_by_name["Adv Tuck Flag"].categories == ["Core"]

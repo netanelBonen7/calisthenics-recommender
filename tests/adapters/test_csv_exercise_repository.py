@@ -140,6 +140,41 @@ def test_csv_exercise_repository_loads_exercises_and_parses_list_fields(tmp_path
     ]
 
 
+def test_csv_exercise_repository_parses_json_list_cells_from_real_dataset_format(
+    tmp_path,
+):
+    Exercise = get_exercise_model()
+    CsvExerciseRepository = get_csv_exercise_repository()
+    csv_path = write_csv(
+        tmp_path,
+        [
+            {
+                "name": "360° Pull",
+                "description": "A dynamic explosive movement rotating around the bar.",
+                "muscle_groups": '["Back", "Shoulders", "Biceps", "Core"]',
+                "families": '["Pull-up"]',
+                "materials": '["Bar"]',
+                "categories": '["Upper Body Pull"]',
+            }
+        ],
+    )
+
+    repository = CsvExerciseRepository(csv_path)
+
+    exercises = list(repository.iter_exercises())
+
+    assert exercises == [
+        Exercise(
+            name="360° Pull",
+            description="A dynamic explosive movement rotating around the bar.",
+            muscle_groups=["Back", "Shoulders", "Biceps", "Core"],
+            families=["Pull-up"],
+            materials=["Bar"],
+            categories=["Upper Body Pull"],
+        )
+    ]
+
+
 def test_csv_exercise_repository_accepts_empty_materials_as_empty_list(tmp_path):
     CsvExerciseRepository = get_csv_exercise_repository()
     csv_path = write_csv(
@@ -222,6 +257,30 @@ def test_csv_exercise_repository_raises_clear_error_for_truncated_list_field(tmp
     repository = CsvExerciseRepository(csv_path)
 
     with pytest.raises(ValueError, match="row 2|categories"):
+        list(repository.iter_exercises())
+
+
+def test_csv_exercise_repository_raises_clear_error_for_malformed_json_list_field(
+    tmp_path,
+):
+    CsvExerciseRepository = get_csv_exercise_repository()
+    csv_path = write_csv(
+        tmp_path,
+        [
+            {
+                "name": "Body Row",
+                "description": "Horizontal pulling variation.",
+                "muscle_groups": '["Back", "Biceps"',
+                "families": "Row",
+                "materials": "Bar",
+                "categories": "Upper Body Pull",
+            }
+        ],
+    )
+
+    repository = CsvExerciseRepository(csv_path)
+
+    with pytest.raises(ValueError, match=r"row 2|muscle_groups"):
         list(repository.iter_exercises())
 
 

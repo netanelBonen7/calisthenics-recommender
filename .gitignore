@@ -18,3 +18,7 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local data artifacts
+data/raw/calisthenics_exercises.csv
+data/cache/*.jsonl

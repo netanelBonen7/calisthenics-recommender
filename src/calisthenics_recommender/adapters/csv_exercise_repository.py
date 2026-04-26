@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import json
+from json import JSONDecodeError
 import logging
 from pathlib import Path
 from typing import Iterable
@@ -127,4 +129,39 @@ class CsvExerciseRepository:
             )
             raise ValueError(f"Invalid row {row_number}: {field_name}")
 
+        normalized_value = raw_value.strip()
+        if normalized_value.startswith("["):
+            return self._parse_json_list_field(
+                row_number=row_number,
+                field_name=field_name,
+                raw_value=normalized_value,
+            )
+
         return [item.strip() for item in raw_value.split(";") if item.strip()]
+
+    def _parse_json_list_field(
+        self, row_number: int, field_name: str, raw_value: str
+    ) -> list[str]:
+        try:
+            parsed_value = json.loads(raw_value)
+        except JSONDecodeError as error:
+            logger.warning(
+                "Invalid CSV row %s in %s (%s)",
+                row_number,
+                self._csv_path,
+                field_name,
+            )
+            raise ValueError(f"Invalid row {row_number}: {field_name}") from error
+
+        if not isinstance(parsed_value, list) or any(
+            not isinstance(item, str) for item in parsed_value
+        ):
+            logger.warning(
+                "Invalid CSV row %s in %s (%s)",
+                row_number,
+                self._csv_path,
+                field_name,
+            )
+            raise ValueError(f"Invalid row {row_number}: {field_name}")
+
+        return [item.strip() for item in parsed_value if item.strip()]
