@@ -102,3 +102,64 @@ def test_build_exercise_cache_main_creates_a_readable_local_cache(tmp_path):
     assert len(embedded_exercises) == 2
     assert all(len(item.embedding) == 4 for item in embedded_exercises)
     assert embedded_exercises[0].embedding != embedded_exercises[1].embedding
+
+
+def test_build_exercise_cache_main_supports_sentence_transformer_mode_without_real_model(
+    tmp_path, monkeypatch
+):
+    module = load_build_exercise_cache_module()
+    csv_path = tmp_path / "exercises.csv"
+    cache_path = tmp_path / "embedded_exercises.jsonl"
+    write_exercise_csv(csv_path)
+    init_calls: list[tuple[str, str, bool]] = []
+    embed_calls: list[str] = []
+
+    class FakeSentenceTransformerEmbeddingProvider:
+        def __init__(
+            self,
+            model_name: str = "unused",
+            text_prefix: str = "",
+            normalize_embeddings: bool = True,
+            model=None,
+        ) -> None:
+            init_calls.append((model_name, text_prefix, normalize_embeddings))
+
+        def get_embedding_dimension(self) -> int:
+            return 3
+
+        def embed(self, text: str) -> list[float]:
+            embed_calls.append(text)
+            return [1.0, 0.0, 0.0]
+
+    monkeypatch.setattr(
+        module,
+        "SentenceTransformerEmbeddingProvider",
+        FakeSentenceTransformerEmbeddingProvider,
+    )
+
+    exit_code = module.main(
+        [
+            "--input-csv",
+            str(csv_path),
+            "--output-cache",
+            str(cache_path),
+            "--embedding-provider",
+            "sentence-transformer",
+            "--embedding-model",
+            "custom/local-model",
+            "--text-prefix",
+            "passage: ",
+            "--text-builder-version",
+            "v1",
+        ]
+    )
+
+    assert exit_code == 0
+    assert init_calls == [("custom/local-model", "passage: ", True)]
+    assert len(embed_calls) == 2
+    assert json.loads(cache_path.read_text(encoding="utf-8").splitlines()[0]) == {
+        "type": "metadata",
+        "embedding_model": "custom/local-model",
+        "embedding_dimension": 3,
+        "text_builder_version": "v1",
+    }

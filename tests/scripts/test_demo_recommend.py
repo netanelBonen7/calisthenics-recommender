@@ -150,3 +150,96 @@ def test_read_embedded_exercise_cache_metadata_reads_metadata_from_script_built_
     assert metadata.embedding_model == "fake-hash-v1"
     assert metadata.embedding_dimension == 4
     assert metadata.text_builder_version == "v1"
+
+
+def test_demo_recommend_main_supports_sentence_transformer_mode_without_real_model(
+    tmp_path, monkeypatch, capsys
+):
+    csv_path = tmp_path / "exercises.csv"
+    cache_path = tmp_path / "embedded_exercises.jsonl"
+    write_exercise_csv(csv_path)
+    build_module = load_build_exercise_cache_module()
+    demo_module = load_demo_recommend_module()
+    build_init_calls: list[tuple[str, str, bool]] = []
+    demo_init_calls: list[tuple[str, str, bool]] = []
+
+    class FakeSentenceTransformerEmbeddingProvider:
+        def __init__(
+            self,
+            model_name: str = "unused",
+            text_prefix: str = "",
+            normalize_embeddings: bool = True,
+            model=None,
+        ) -> None:
+            init_calls = build_init_calls if text_prefix == "passage: " else demo_init_calls
+            init_calls.append((model_name, text_prefix, normalize_embeddings))
+            self._text_prefix = text_prefix
+
+        def get_embedding_dimension(self) -> int:
+            return 3
+
+        def embed(self, text: str) -> list[float]:
+            if "Ring Pull Up" in text or "Rings" in text:
+                return [0.0, 1.0, 0.0]
+            if "Body Row" in text:
+                return [0.8, 0.2, 0.0]
+            return [1.0, 0.0, 0.0]
+
+    monkeypatch.setattr(
+        build_module,
+        "SentenceTransformerEmbeddingProvider",
+        FakeSentenceTransformerEmbeddingProvider,
+    )
+    monkeypatch.setattr(
+        demo_module,
+        "SentenceTransformerEmbeddingProvider",
+        FakeSentenceTransformerEmbeddingProvider,
+    )
+
+    build_exit_code = build_module.main(
+        [
+            "--input-csv",
+            str(csv_path),
+            "--output-cache",
+            str(cache_path),
+            "--embedding-provider",
+            "sentence-transformer",
+            "--embedding-model",
+            "custom/local-model",
+            "--text-prefix",
+            "passage: ",
+            "--text-builder-version",
+            "v1",
+        ]
+    )
+    demo_exit_code = demo_module.main(
+        [
+            "--cache-path",
+            str(cache_path),
+            "--embedding-provider",
+            "sentence-transformer",
+            "--embedding-model",
+            "custom/local-model",
+            "--target-family",
+            "Pull-up",
+            "--goal",
+            "I want to build pulling strength and improve pull-ups.",
+            "--current-level",
+            "I can do a few strict pull-ups.",
+            "--available-equipment",
+            "Bar",
+            "--query-prefix",
+            "query: ",
+            "--limit",
+            "3",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert build_exit_code == 0
+    assert demo_exit_code == 0
+    assert build_init_calls == [("custom/local-model", "passage: ", True)]
+    assert demo_init_calls == [("custom/local-model", "query: ", True)]
+    assert "Pull Up Negative" in output
+    assert "Ring Pull Up" not in output
+    assert "Match score:" in output
