@@ -27,7 +27,11 @@ class SentenceTransformerEmbeddingProvider:
         return _coerce_embedding_to_float_list(raw_embedding)
 
     def get_embedding_dimension(self) -> int:
-        dimension = self._get_model().get_sentence_embedding_dimension()
+        model = self._get_model()
+        if hasattr(model, "get_embedding_dimension"):
+            dimension = model.get_embedding_dimension()
+        else:
+            dimension = model.get_sentence_embedding_dimension()
         if isinstance(dimension, bool) or not isinstance(dimension, int) or dimension <= 0:
             raise ValueError("sentence transformer embedding dimension must be a positive integer")
         return dimension

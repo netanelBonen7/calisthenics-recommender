@@ -21,6 +21,28 @@ class RecordingModel:
         return self._output
 
 
+class RecordingModernDimensionModel(RecordingModel):
+    def __init__(self, output, dimension: int) -> None:
+        super().__init__(output)
+        self.dimension_calls = 0
+        self._dimension = dimension
+
+    def get_embedding_dimension(self) -> int:
+        self.dimension_calls += 1
+        return self._dimension
+
+
+class RecordingLegacyDimensionModel(RecordingModel):
+    def __init__(self, output, dimension: int) -> None:
+        super().__init__(output)
+        self.dimension_calls = 0
+        self._dimension = dimension
+
+    def get_sentence_embedding_dimension(self) -> int:
+        self.dimension_calls += 1
+        return self._dimension
+
+
 def get_embedding_provider_protocol():
     module = import_module("calisthenics_recommender.ports.embedding_provider")
     return getattr(module, "EmbeddingProvider")
@@ -57,6 +79,24 @@ def test_sentence_transformer_embedding_provider_prefixes_text_and_returns_list_
     assert model.calls == [("query: pull-up strength", True)]
 
 
+def test_sentence_transformer_embedding_provider_prefers_modern_dimension_method():
+    SentenceTransformerEmbeddingProvider = get_sentence_transformer_embedding_provider()
+    model = RecordingModernDimensionModel([0.1, 0.2], dimension=2)
+    provider = SentenceTransformerEmbeddingProvider(model=model)
+
+    assert provider.get_embedding_dimension() == 2
+    assert model.dimension_calls == 1
+
+
+def test_sentence_transformer_embedding_provider_falls_back_to_legacy_dimension_method():
+    SentenceTransformerEmbeddingProvider = get_sentence_transformer_embedding_provider()
+    model = RecordingLegacyDimensionModel([0.1, 0.2], dimension=2)
+    provider = SentenceTransformerEmbeddingProvider(model=model)
+
+    assert provider.get_embedding_dimension() == 2
+    assert model.dimension_calls == 1
+
+
 def test_sentence_transformer_embedding_provider_lazy_loads_custom_model_name(
     monkeypatch,
 ):
@@ -72,7 +112,7 @@ def test_sentence_transformer_embedding_provider_lazy_loads_custom_model_name(
             encode_calls.append((text, normalize_embeddings))
             return [0.1, 0.2]
 
-        def get_sentence_embedding_dimension(self) -> int:
+        def get_embedding_dimension(self) -> int:
             return 2
 
     monkeypatch.setitem(
