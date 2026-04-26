@@ -1,5 +1,5 @@
 import csv
-import importlib.util
+import importlib
 from pathlib import Path
 
 import pytest
@@ -18,33 +18,15 @@ from calisthenics_recommender.domain.user_request import UserRequest
 
 
 def load_build_exercise_cache_module():
-    script_path = (
-        Path(__file__).resolve().parents[2] / "scripts" / "build_exercise_cache.py"
+    return importlib.import_module(
+        "calisthenics_recommender.cli.build_exercise_cache"
     )
-    spec = importlib.util.spec_from_file_location(
-        "build_exercise_cache_script", script_path
-    )
-    if spec is None or spec.loader is None:
-        raise AssertionError(f"Unable to load script module from {script_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def load_debug_recommendations_module():
-    script_path = (
-        Path(__file__).resolve().parents[2] / "scripts" / "debug_recommendations.py"
+    return importlib.import_module(
+        "calisthenics_recommender.cli.debug_recommendations"
     )
-    spec = importlib.util.spec_from_file_location(
-        "debug_recommendations_script", script_path
-    )
-    if spec is None or spec.loader is None:
-        raise AssertionError(f"Unable to load script module from {script_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def write_exercise_csv(path: Path, rows: list[dict[str, str]]) -> None:

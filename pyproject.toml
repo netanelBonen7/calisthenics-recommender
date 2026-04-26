@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "calisthenics-recommender"
 version = "0.1.0"
@@ -8,8 +12,16 @@ dependencies = [
     "sentence-transformers>=5.4.1",
 ]
 
+[project.scripts]
+build-exercise-cache = "calisthenics_recommender.cli.build_exercise_cache:main"
+demo-recommend = "calisthenics_recommender.cli.demo_recommend:main"
+debug-recommendations = "calisthenics_recommender.cli.debug_recommendations:main"
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
     "ruff>=0.15.12",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/calisthenics_recommender"]

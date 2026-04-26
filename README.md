@@ -90,7 +90,8 @@ src/calisthenics_recommender/
 ├── domain/
 ├── application/
 ├── ports/
-└── adapters/
+├── adapters/
+└── cli/
 
 scripts/
 ├── build_exercise_cache.py
@@ -161,17 +162,19 @@ adapters/sentence_transformer_embedding_provider.py
 
 Adapters connect the core to CSV files, local JSONL caches, fake deterministic embeddings, and Sentence Transformers models.
 
-### Scripts Layer
+### CLI Layer
 
-Thin developer-facing entry points.
+Packaged developer-facing entry points.
 
 ```text
-scripts/build_exercise_cache.py
-scripts/demo_recommend.py
-scripts/debug_recommendations.py
+cli/build_exercise_cache.py
+cli/demo_recommend.py
+cli/debug_recommendations.py
 ```
 
-Scripts wire adapters and application functions together. They should not contain recommendation logic.
+These CLI modules wire adapters and application functions together. They should not contain recommendation logic.
+
+The top-level `scripts/` files are thin compatibility wrappers around the packaged CLI entry points.
 
 ---
 
@@ -261,19 +264,13 @@ Install dependencies:
 uv sync
 ```
 
+`uv sync` installs the project itself, which enables the packaged CLI commands used below.
+
 Run the test suite:
 
 ```powershell
 uv run pytest
 ```
-
-Local scripts may currently require `PYTHONPATH=src` so Python can import the package directly from the source tree:
-
-```powershell
-$env:PYTHONPATH = "src"
-```
-
-This is a developer-experience issue planned for cleanup later.
 
 Sentence Transformers / Qwen usage may download model files on first run. The default local Sentence Transformers model is:
 
@@ -287,18 +284,12 @@ No OpenAI API key is required.
 
 ## Usage Examples
 
-Set `PYTHONPATH` first in the current PowerShell session if needed:
-
-```powershell
-$env:PYTHONPATH = "src"
-```
-
 ### Build A Cache With Local Deterministic Embeddings
 
 This mode is fast and useful for development and testing.
 
 ```powershell
-uv run python scripts/build_exercise_cache.py `
+uv run build-exercise-cache `
   --input-csv .\data\raw\calisthenics_exercises.csv `
   --output-cache .\data\cache\calisthenics_fake_cache.jsonl `
   --embedding-provider local-deterministic `
@@ -312,7 +303,7 @@ uv run python scripts/build_exercise_cache.py `
 This mode uses a real local open-source embedding model. The first run may download model files from Hugging Face.
 
 ```powershell
-uv run python scripts/build_exercise_cache.py `
+uv run build-exercise-cache `
   --input-csv .\data\raw\calisthenics_exercises.csv `
   --output-cache .\data\cache\calisthenics_qwen_cache.jsonl `
   --embedding-provider sentence-transformer `
@@ -325,7 +316,7 @@ uv run python scripts/build_exercise_cache.py `
 Example Pull-up query using a Qwen-backed cache:
 
 ```powershell
-uv run python scripts/demo_recommend.py `
+uv run demo-recommend `
   --cache-path .\data\cache\calisthenics_qwen_cache.jsonl `
   --embedding-provider sentence-transformer `
   --embedding-model "Qwen/Qwen3-Embedding-0.6B" `
@@ -354,7 +345,7 @@ The debug script helps inspect what the system is actually embedding and retriev
 ### Inspect Query Text And Selected Exercise Texts
 
 ```powershell
-uv run python scripts/debug_recommendations.py `
+uv run debug-recommendations `
   --input-csv .\data\raw\calisthenics_exercises.csv `
   --exercise-name "Str OA Row" `
   --exercise-name "Pull Up" `
@@ -370,7 +361,7 @@ uv run python scripts/debug_recommendations.py `
 ### Inspect Top Retrieval Candidates From A Cache
 
 ```powershell
-uv run python scripts/debug_recommendations.py `
+uv run debug-recommendations `
   --cache-path .\data\cache\calisthenics_qwen_cache.jsonl `
   --embedding-provider sentence-transformer `
   --embedding-model "Qwen/Qwen3-Embedding-0.6B" `
@@ -452,7 +443,6 @@ Known limitations:
 - No Docker image yet.
 - No vector database yet.
 - Local Qwen / Sentence Transformers setup can be heavy because it depends on transformer model files.
-- Local scripts may currently require `PYTHONPATH=src`.
 
 These limitations are intentional and tracked as future work.
 

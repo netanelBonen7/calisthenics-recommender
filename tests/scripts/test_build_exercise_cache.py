@@ -1,5 +1,5 @@
 import csv
-import importlib.util
+import importlib
 import json
 from pathlib import Path
 
@@ -11,18 +11,9 @@ from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
 
 
 def load_build_exercise_cache_module():
-    script_path = (
-        Path(__file__).resolve().parents[2] / "scripts" / "build_exercise_cache.py"
+    return importlib.import_module(
+        "calisthenics_recommender.cli.build_exercise_cache"
     )
-    spec = importlib.util.spec_from_file_location(
-        "build_exercise_cache_script", script_path
-    )
-    if spec is None or spec.loader is None:
-        raise AssertionError(f"Unable to load script module from {script_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def write_exercise_csv(path: Path) -> None:
