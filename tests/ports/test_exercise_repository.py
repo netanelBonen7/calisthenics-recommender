@@ -1,6 +1,6 @@
 from importlib import import_module
 import inspect
-from typing import get_type_hints
+from typing import Iterable, get_type_hints
 
 
 def get_exercise_model():
@@ -25,14 +25,14 @@ def valid_exercise():
     )
 
 
-def test_exercise_repository_is_a_runtime_checkable_protocol_with_list_exercises():
+def test_exercise_repository_is_a_runtime_checkable_protocol_with_iter_exercises():
     Exercise = get_exercise_model()
     ExerciseRepository = get_exercise_repository_protocol()
 
     assert getattr(ExerciseRepository, "_is_protocol", False) is True
     assert getattr(ExerciseRepository, "_is_runtime_protocol", False) is True
-    assert list(inspect.signature(ExerciseRepository.list_exercises).parameters) == ["self"]
-    assert get_type_hints(ExerciseRepository.list_exercises)["return"] == list[Exercise]
+    assert list(inspect.signature(ExerciseRepository.iter_exercises).parameters) == ["self"]
+    assert get_type_hints(ExerciseRepository.iter_exercises)["return"] == Iterable[Exercise]
 
 
 def test_exercise_repository_can_be_implemented_by_a_simple_fake_class():
@@ -43,11 +43,16 @@ def test_exercise_repository_can_be_implemented_by_a_simple_fake_class():
         def __init__(self, exercises):
             self._exercises = exercises
 
-        def list_exercises(self):
-            return self._exercises
+        def iter_exercises(self):
+            return iter(self._exercises)
 
     repository = InMemoryExerciseRepository([exercise])
+    exercises = repository.iter_exercises()
 
     assert isinstance(repository, ExerciseRepository)
-    assert repository.list_exercises() == [exercise]
-    assert all(item.__class__ is exercise.__class__ for item in repository.list_exercises())
+    assert list(exercises) == [exercise]
+    assert not hasattr(exercises, "append")
+    assert all(
+        item.__class__ is exercise.__class__
+        for item in repository.iter_exercises()
+    )

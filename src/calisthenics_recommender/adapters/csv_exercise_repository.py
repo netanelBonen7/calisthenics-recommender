@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import logging
 from pathlib import Path
+from typing import Iterable
 
 from pydantic import ValidationError
 
@@ -27,20 +28,23 @@ class CsvExerciseRepository:
     def __init__(self, csv_path: Path | str) -> None:
         self._csv_path = Path(csv_path)
 
-    def list_exercises(self) -> list[Exercise]:
-        logger.info("Loading exercises from CSV path %s", self._csv_path)
+    def iter_exercises(self) -> Iterable[Exercise]:
+        logger.info("Starting exercise CSV scan from path %s", self._csv_path)
 
         with self._csv_path.open("r", newline="", encoding="utf-8") as csv_file:
             reader = csv.DictReader(csv_file)
             self._validate_headers(reader.fieldnames)
+            exercise_count = 0
 
-            exercises = [
-                self._build_exercise(row_number, row)
-                for row_number, row in enumerate(reader, start=2)
-            ]
+            for row_number, row in enumerate(reader, start=2):
+                yield self._build_exercise(row_number, row)
+                exercise_count += 1
 
-        logger.info("Loaded %s exercises from CSV path %s", len(exercises), self._csv_path)
-        return exercises
+        logger.info(
+            "Finished exercise CSV scan from path %s with %s exercises",
+            self._csv_path,
+            exercise_count,
+        )
 
     def _validate_headers(self, fieldnames: list[str] | None) -> None:
         actual_headers = [] if fieldnames is None else fieldnames

@@ -85,7 +85,7 @@ def test_csv_exercise_repository_accepts_string_csv_path(tmp_path):
 
     repository = CsvExerciseRepository(str(csv_path))
 
-    exercises = repository.list_exercises()
+    exercises = list(repository.iter_exercises())
 
     assert len(exercises) == 1
     assert exercises[0].name == "Pull Up Negative"
@@ -118,7 +118,7 @@ def test_csv_exercise_repository_loads_exercises_and_parses_list_fields(tmp_path
 
     repository = CsvExerciseRepository(csv_path)
 
-    exercises = repository.list_exercises()
+    exercises = list(repository.iter_exercises())
 
     assert exercises == [
         Exercise(
@@ -158,7 +158,7 @@ def test_csv_exercise_repository_accepts_empty_materials_as_empty_list(tmp_path)
 
     repository = CsvExerciseRepository(csv_path)
 
-    exercises = repository.list_exercises()
+    exercises = list(repository.iter_exercises())
 
     assert exercises[0].materials == []
 
@@ -182,7 +182,7 @@ def test_csv_exercise_repository_raises_clear_error_for_missing_required_headers
     repository = CsvExerciseRepository(csv_path)
 
     with pytest.raises(ValueError, match="Missing required headers|categories"):
-        repository.list_exercises()
+        list(repository.iter_exercises())
 
 
 def test_csv_exercise_repository_raises_clear_error_for_invalid_name_row(tmp_path):
@@ -204,7 +204,7 @@ def test_csv_exercise_repository_raises_clear_error_for_invalid_name_row(tmp_pat
     repository = CsvExerciseRepository(csv_path)
 
     with pytest.raises(ValueError, match="row 2|name"):
-        repository.list_exercises()
+        list(repository.iter_exercises())
 
 
 def test_csv_exercise_repository_raises_clear_error_for_truncated_list_field(tmp_path):
@@ -222,7 +222,7 @@ def test_csv_exercise_repository_raises_clear_error_for_truncated_list_field(tmp
     repository = CsvExerciseRepository(csv_path)
 
     with pytest.raises(ValueError, match="row 2|categories"):
-        repository.list_exercises()
+        list(repository.iter_exercises())
 
 
 @pytest.mark.parametrize("field_name", ["muscle_groups", "families", "categories"])
@@ -244,7 +244,7 @@ def test_csv_exercise_repository_raises_clear_error_for_empty_required_list_fiel
     repository = CsvExerciseRepository(csv_path)
 
     with pytest.raises(ValueError, match=rf"row 2|{field_name}"):
-        repository.list_exercises()
+        list(repository.iter_exercises())
 
 
 def test_csv_exercise_repository_returns_defensive_copies(tmp_path):
@@ -265,15 +265,41 @@ def test_csv_exercise_repository_returns_defensive_copies(tmp_path):
 
     repository = CsvExerciseRepository(csv_path)
 
-    first_result = repository.list_exercises()
+    first_result = list(repository.iter_exercises())
     first_result[0].materials.append("Rings")
-    second_result = repository.list_exercises()
+    second_result = list(repository.iter_exercises())
 
     assert first_result is not second_result
     assert second_result[0].materials == ["Bar"]
 
 
-def test_csv_exercise_repository_logs_only_safe_operational_counts(
+def test_csv_exercise_repository_returns_an_iterable_that_can_be_materialized_with_list(
+    tmp_path,
+):
+    CsvExerciseRepository = get_csv_exercise_repository()
+    csv_path = write_csv(
+        tmp_path,
+        [
+            {
+                "name": "Pull Up Negative",
+                "description": "A controlled eccentric pull-up variation.",
+                "muscle_groups": "Back; Biceps",
+                "families": "Pull-up",
+                "materials": "Bar",
+                "categories": "Upper Body Pull",
+            }
+        ],
+    )
+
+    repository = CsvExerciseRepository(csv_path)
+    exercises = repository.iter_exercises()
+
+    assert not isinstance(exercises, list)
+    assert not hasattr(exercises, "append")
+    assert [exercise.name for exercise in exercises] == ["Pull Up Negative"]
+
+
+def test_csv_exercise_repository_streams_rows_and_logs_only_safe_operational_messages(
     tmp_path, caplog
 ):
     CsvExerciseRepository = get_csv_exercise_repository()
@@ -293,9 +319,53 @@ def test_csv_exercise_repository_logs_only_safe_operational_counts(
     repository = CsvExerciseRepository(csv_path)
 
     with caplog.at_level(logging.INFO):
-        exercises = repository.list_exercises()
+        iterator = iter(repository.iter_exercises())
+        first_exercise = next(iterator)
 
-    assert len(exercises) == 1
-    assert str(csv_path) in caplog.text
-    assert "Loaded 1 exercises" in caplog.text
+        assert first_exercise.name == "Pull Up Negative"
+        assert str(csv_path) in caplog.text
+        assert "Starting exercise CSV scan" in caplog.text
+        assert "Finished exercise CSV scan" not in caplog.text
+
+        remaining_exercises = list(iterator)
+
+    assert remaining_exercises == []
+    assert "Finished exercise CSV scan" in caplog.text
+    assert "with 1 exercises" in caplog.text
     assert "A controlled eccentric pull-up variation for building strength." not in caplog.text
+
+
+def test_csv_exercise_repository_yields_first_valid_row_before_later_row_validation_error(
+    tmp_path,
+):
+    CsvExerciseRepository = get_csv_exercise_repository()
+    csv_path = write_csv(
+        tmp_path,
+        [
+            {
+                "name": "Pull Up Negative",
+                "description": "A controlled eccentric pull-up variation.",
+                "muscle_groups": "Back; Biceps",
+                "families": "Pull-up",
+                "materials": "Bar",
+                "categories": "Upper Body Pull",
+            },
+            {
+                "name": "Body Row",
+                "description": "Horizontal pulling variation.",
+                "muscle_groups": "Back; Biceps",
+                "families": "Row",
+                "materials": "Bar",
+                "categories": " ; ",
+            },
+        ],
+    )
+    repository = CsvExerciseRepository(csv_path)
+
+    iterator = iter(repository.iter_exercises())
+    first_exercise = next(iterator)
+
+    assert first_exercise.name == "Pull Up Negative"
+
+    with pytest.raises(ValueError, match=r"row 3|categories"):
+        next(iterator)
