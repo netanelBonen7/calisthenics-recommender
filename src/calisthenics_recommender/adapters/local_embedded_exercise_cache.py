@@ -126,17 +126,39 @@ class LocalEmbeddedExerciseRepository:
         )
 
     def _read_metadata(self, cache_file: Any) -> EmbeddedExerciseCacheMetadata:
-        first_line = cache_file.readline()
-        if first_line == "":
-            raise ValueError(f"Embedded exercise cache file is empty: {self._cache_path}")
+        return _read_embedded_exercise_cache_metadata_from_file(
+            cache_file=cache_file,
+            cache_path=self._cache_path,
+        )
 
-        record = _parse_json_line(line=first_line, line_number=1)
-        if not isinstance(record, dict):
-            raise ValueError("Invalid metadata at line 1: expected object")
-        if record.get("type") != _METADATA_RECORD_TYPE:
-            raise ValueError("Missing metadata at line 1")
 
-        return _parse_metadata_record(record=record, line_number=1)
+def read_embedded_exercise_cache_metadata(
+    cache_path: Path | str,
+) -> EmbeddedExerciseCacheMetadata:
+    normalized_cache_path = Path(cache_path)
+
+    with normalized_cache_path.open("r", encoding="utf-8") as cache_file:
+        return _read_embedded_exercise_cache_metadata_from_file(
+            cache_file=cache_file,
+            cache_path=normalized_cache_path,
+        )
+
+
+def _read_embedded_exercise_cache_metadata_from_file(
+    cache_file: Any,
+    cache_path: Path,
+) -> EmbeddedExerciseCacheMetadata:
+    first_line = cache_file.readline()
+    if first_line == "":
+        raise ValueError(f"Embedded exercise cache file is empty: {cache_path}")
+
+    record = _parse_json_line(line=first_line, line_number=1)
+    if not isinstance(record, dict):
+        raise ValueError("Invalid metadata at line 1: expected object")
+    if record.get("type") != _METADATA_RECORD_TYPE:
+        raise ValueError("Missing metadata at line 1")
+
+    return _parse_metadata_record(record=record, line_number=1)
 
 
 def _serialize_embedded_exercise_record(
