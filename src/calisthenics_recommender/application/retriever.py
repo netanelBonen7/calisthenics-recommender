@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Sequence
+import heapq
+from typing import Iterable, Sequence
 
 from calisthenics_recommender.application.similarity import cosine_similarity
 from calisthenics_recommender.domain.embedded_exercise import EmbeddedExercise
@@ -14,16 +15,27 @@ class RetrievalResult:
 
 def retrieve_top_matches(
     query_embedding: Sequence[float],
-    embedded_exercises: Sequence[EmbeddedExercise],
+    embedded_exercises: Iterable[EmbeddedExercise],
     limit: int,
 ) -> list[RetrievalResult]:
-    scored_results: list[RetrievalResult] = []
+    if limit <= 0:
+        return []
 
-    for embedded_exercise in embedded_exercises:
+    heap: list[tuple[float, int, int, RetrievalResult]] = []
+
+    for encounter_index, embedded_exercise in enumerate(embedded_exercises):
         score = cosine_similarity(query_embedding, embedded_exercise.embedding)
-        scored_results.append(
-            RetrievalResult(exercise=embedded_exercise.exercise, score=score)
+        retrieval_result = RetrievalResult(
+            exercise=embedded_exercise.exercise, score=score
         )
+        heap_entry = (score, -encounter_index, encounter_index, retrieval_result)
 
-    ranked_results = sorted(scored_results, key=lambda result: result.score, reverse=True)
-    return ranked_results[:limit]
+        if len(heap) < limit:
+            heapq.heappush(heap, heap_entry)
+            continue
+
+        if heap_entry[:3] > heap[0][:3]:
+            heapq.heapreplace(heap, heap_entry)
+
+    ranked_results = sorted(heap, key=lambda entry: (-entry[0], entry[2]))
+    return [entry[3] for entry in ranked_results]

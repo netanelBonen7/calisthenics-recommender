@@ -1,6 +1,7 @@
 from copy import deepcopy
 from importlib import import_module
 import inspect
+from typing import Iterable, Iterator
 from pathlib import Path
 import socket
 
@@ -80,12 +81,86 @@ def embedded_exercise(
 
 class InMemoryEmbeddedExerciseRepository:
     def __init__(self, embedded_exercises):
-        self._embedded_exercises = list(embedded_exercises)
+        self._embedded_exercises = tuple(embedded_exercises)
         self.calls = 0
 
-    def list_embedded_exercises(self):
+    def iter_embedded_exercises(self):
         self.calls += 1
-        return self._embedded_exercises
+        return iter(self._embedded_exercises)
+
+    def snapshot(self):
+        return list(self._embedded_exercises)
+
+
+class OnePassEmbeddedExerciseRepository:
+    def __init__(self, embedded_exercises):
+        self._embedded_exercises = tuple(embedded_exercises)
+        self.calls = 0
+
+    def iter_embedded_exercises(self):
+        if self.calls != 0:
+            raise AssertionError("iter_embedded_exercises() should only be called once")
+        self.calls += 1
+        return (exercise for exercise in self._embedded_exercises)
+
+
+class LenExplodingIterable(Iterable):
+    def __init__(self, values):
+        self._values = tuple(values)
+
+    def __iter__(self) -> Iterator:
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        raise AssertionError("len() should not be used")
+
+    def __length_hint__(self) -> int:
+        raise AssertionError("__length_hint__() should not be used")
+
+
+class StreamingProbeIterable:
+    def __init__(self, embedded_exercises, embedding_provider):
+        self._embedded_exercises = tuple(embedded_exercises)
+        self._embedding_provider = embedding_provider
+
+    def __iter__(self):
+        for index, embedded_exercise in enumerate(self._embedded_exercises):
+            if index >= 2 and not self._embedding_provider.calls:
+                raise AssertionError(
+                    "embedded exercises were fully materialized before query embedding"
+                )
+            yield embedded_exercise
+
+    def __len__(self) -> int:
+        raise AssertionError("len() should not be used")
+
+    def __length_hint__(self) -> int:
+        raise AssertionError("__length_hint__() should not be used")
+
+
+class StreamingProbeEmbeddedExerciseRepository:
+    def __init__(self, embedded_exercises, embedding_provider):
+        self._embedded_exercises = embedded_exercises
+        self._embedding_provider = embedding_provider
+        self.calls = 0
+
+    def iter_embedded_exercises(self):
+        self.calls += 1
+        return iter(
+            StreamingProbeIterable(
+                self._embedded_exercises, self._embedding_provider
+            )
+        )
+
+
+class LenExplodingEmbeddedExerciseRepository:
+    def __init__(self, embedded_exercises):
+        self._embedded_exercises = embedded_exercises
+        self.calls = 0
+
+    def iter_embedded_exercises(self):
+        self.calls += 1
+        return LenExplodingIterable(self._embedded_exercises)
 
 
 class RecordingEmbeddingProvider:
@@ -173,6 +248,48 @@ def test_recommend_exercises_returns_ranked_recommendations_with_filtering_and_l
         recommendation.exercise_name != "Ring Pull Up"
         for recommendation in recommendations
     )
+    assert embedding_provider.calls == [build_query_text(user_request)]
+
+
+def test_recommend_exercises_embeds_only_the_query_and_never_runtime_exercise_text(
+    monkeypatch,
+):
+    recommend_exercises = get_recommend_exercises()
+    user_request = valid_user_request()
+    repository = InMemoryEmbeddedExerciseRepository(
+        [
+            embedded_exercise(
+                "Pull Up",
+                description="A strict vertical pulling movement on a bar.",
+                families=["Pull-up"],
+                materials=["Bar"],
+                categories=["Upper Body Pull"],
+                embedding=[0.95, 0.05],
+            )
+        ]
+    )
+    embedding_provider = RecordingEmbeddingProvider(
+        {build_query_text(user_request): [1.0, 0.0]}
+    )
+
+    def fail(*args, **kwargs):
+        raise AssertionError("build_exercise_text should not be called at runtime")
+
+    monkeypatch.setattr(
+        "calisthenics_recommender.application.exercise_text_builder.build_exercise_text",
+        fail,
+    )
+
+    recommendations = recommend_exercises(
+        user_request,
+        repository,
+        embedding_provider,
+        limit=1,
+    )
+
+    assert [recommendation.exercise_name for recommendation in recommendations] == [
+        "Pull Up"
+    ]
     assert embedding_provider.calls == [build_query_text(user_request)]
 
 
@@ -268,6 +385,137 @@ def test_recommend_exercises_returns_an_empty_list_when_no_exercises_match_equip
 
     assert recommendations == []
     assert embedding_provider.calls == []
+
+
+def test_recommend_exercises_supports_a_one_pass_generator_repository():
+    recommend_exercises = get_recommend_exercises()
+    user_request = valid_user_request()
+    repository = OnePassEmbeddedExerciseRepository(
+        [
+            embedded_exercise(
+                "Pull Up",
+                description="A strict vertical pulling movement on a bar.",
+                families=["Pull-up"],
+                materials=["Bar"],
+                categories=["Upper Body Pull"],
+                embedding=[0.95, 0.05],
+            ),
+            embedded_exercise(
+                "Body Row",
+                description="A horizontal pull that builds pulling volume.",
+                families=["Pull-up"],
+                materials=["Bar"],
+                categories=["Upper Body Pull"],
+                embedding=[0.80, 0.20],
+            ),
+        ]
+    )
+    embedding_provider = RecordingEmbeddingProvider(
+        {build_query_text(user_request): [1.0, 0.0]}
+    )
+
+    recommendations = recommend_exercises(
+        user_request,
+        repository,
+        embedding_provider,
+        limit=2,
+    )
+
+    assert [recommendation.exercise_name for recommendation in recommendations] == [
+        "Pull Up",
+        "Body Row",
+    ]
+    assert repository.calls == 1
+
+
+def test_recommend_exercises_does_not_require_len_on_repository_output():
+    recommend_exercises = get_recommend_exercises()
+    user_request = valid_user_request()
+    repository = LenExplodingEmbeddedExerciseRepository(
+        [
+            embedded_exercise(
+                "Pull Up",
+                description="A strict vertical pulling movement on a bar.",
+                families=["Pull-up"],
+                materials=["Bar"],
+                categories=["Upper Body Pull"],
+                embedding=[0.95, 0.05],
+            ),
+            embedded_exercise(
+                "Body Row",
+                description="A horizontal pull that builds pulling volume.",
+                families=["Pull-up"],
+                materials=["Bar"],
+                categories=["Upper Body Pull"],
+                embedding=[0.80, 0.20],
+            ),
+        ]
+    )
+    embedding_provider = RecordingEmbeddingProvider(
+        {build_query_text(user_request): [1.0, 0.0]}
+    )
+
+    recommendations = recommend_exercises(
+        user_request,
+        repository,
+        embedding_provider,
+        limit=2,
+    )
+
+    assert [recommendation.exercise_name for recommendation in recommendations] == [
+        "Pull Up",
+        "Body Row",
+    ]
+
+
+def test_recommend_exercises_embeds_after_first_matching_candidate_without_full_materialization():
+    recommend_exercises = get_recommend_exercises()
+    user_request = valid_user_request()
+    embedding_provider = RecordingEmbeddingProvider(
+        {build_query_text(user_request): [1.0, 0.0]}
+    )
+    repository = StreamingProbeEmbeddedExerciseRepository(
+        [
+            embedded_exercise(
+                "Pull Up",
+                description="A strict vertical pulling movement on a bar.",
+                families=["Pull-up"],
+                materials=["Bar"],
+                categories=["Upper Body Pull"],
+                embedding=[0.95, 0.05],
+            ),
+            embedded_exercise(
+                "Body Row",
+                description="A horizontal pull that builds pulling volume.",
+                families=["Pull-up"],
+                materials=["Bar"],
+                categories=["Upper Body Pull"],
+                embedding=[0.80, 0.20],
+            ),
+            embedded_exercise(
+                "Push Up",
+                description="A horizontal pushing movement.",
+                families=["Push-up"],
+                materials=[],
+                categories=["Upper Body Push"],
+                embedding=[0.0, 1.0],
+            ),
+        ],
+        embedding_provider,
+    )
+
+    recommendations = recommend_exercises(
+        user_request,
+        repository,
+        embedding_provider,
+        limit=2,
+    )
+
+    assert [recommendation.exercise_name for recommendation in recommendations] == [
+        "Pull Up",
+        "Body Row",
+    ]
+    assert embedding_provider.calls == [build_query_text(user_request)]
 
 
 @pytest.mark.parametrize("limit", [0, -1])
@@ -391,9 +639,7 @@ def test_recommend_exercises_logs_only_safe_operational_counts(caplog):
         )
 
     assert caplog.messages == [
-        "Loaded 2 embedded exercises from repository",
-        "Filtered embedded exercises down to 2 candidates",
-        "Returning 2 recommendations",
+        "Scanned 2 embedded exercises; 2 matched equipment; returning 2 recommendations",
     ]
     assert user_request.goal not in caplog.text
     assert user_request.current_level not in caplog.text
@@ -427,7 +673,7 @@ def test_recommend_exercises_is_deterministic_and_does_not_mutate_inputs_or_touc
     repository = InMemoryEmbeddedExerciseRepository(embedded_exercises)
     embedding_provider = RecordingEmbeddingProvider({build_query_text(user_request): [1.0, 0.0]})
     original_user_request = deepcopy(user_request)
-    original_repository_data = deepcopy(repository.list_embedded_exercises())
+    original_repository_data = deepcopy(repository.snapshot())
     original_embeddings = deepcopy(embedding_provider.embeddings)
 
     def fail(*args, **kwargs):
@@ -444,5 +690,5 @@ def test_recommend_exercises_is_deterministic_and_does_not_mutate_inputs_or_touc
 
     assert first == second
     assert user_request == original_user_request
-    assert repository.list_embedded_exercises() == original_repository_data
+    assert repository.snapshot() == original_repository_data
     assert embedding_provider.embeddings == original_embeddings
