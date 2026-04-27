@@ -109,6 +109,8 @@ During v2 work, an optional React/Vite demo UI prototype was explored on branch 
 
 The project follows a clean / hexagonal architecture style.
 
+For a deeper design explanation, see docs/ARCHITECTURE.md.
+
 ```text
 src/calisthenics_recommender/
 - domain/
@@ -512,13 +514,3 @@ The same image can run with `sentence-transformer` / Qwen if the runtime config 
 - `target_family` influences semantic retrieval and explanations, but it is not a deterministic hard filter or boost.
 - Difficulty/progression filtering is not implemented.
 - `current_level` is embedded semantically but is not interpreted as structured progression logic.
-
----
-
-## Next Direction
-
-The Dockerized FastAPI runtime packages and runs the API only, reads `CALISTHENICS_RECOMMENDER_CONFIG_PATH`, and treats config/cache files as runtime artifacts.
-
-Do not treat cloud deployment, vector database integration, or frontend serving as implemented on this branch.
-
-The detailed engineering plan is in `V2_REFACTOR_PLAN.md`.
