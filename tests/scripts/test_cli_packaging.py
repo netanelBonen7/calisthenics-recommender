@@ -18,4 +18,7 @@ def test_pyproject_declares_build_backend_and_cli_entry_points() -> None:
         "debug-recommendations": (
             "calisthenics_recommender.cli.debug_recommendations:main"
         ),
+        "import-exercises-to-sqlite": (
+            "calisthenics_recommender.cli.import_exercises_to_sqlite:main"
+        ),
     }

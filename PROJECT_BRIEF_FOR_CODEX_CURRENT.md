@@ -160,11 +160,14 @@ These become validated `Exercise` objects.
 
 ```text
 CsvExerciseRepository
+or SQLiteExerciseRepository
 → ExerciseRepository.iter_exercises()
 → Iterable[Exercise]
 ```
 
 The raw exercise source is streaming. It must not require loading all raw exercises into memory.
+CSV remains the original raw input format. SQLite is a local raw-exercise database
+adapter populated from CSV; embeddings remain separate in the JSONL cache.
 
 ### 7.2 Embedded exercise build pipeline
 
@@ -390,11 +393,12 @@ Current key files include:
 adapters/csv_exercise_repository.py
 adapters/fake_embedding_provider.py
 adapters/local_embedded_exercise_cache.py
+adapters/sqlite_exercise_repository.py
 ```
 
 Responsibilities:
 
-- stream raw exercises from local CSV
+- stream raw exercises from local CSV or SQLite
 - provide fake deterministic embeddings for tests
 - write/read local embedded exercise JSONL cache
 
@@ -463,7 +467,7 @@ tests/adapters/
 
 ## 11. Current completed milestones
 
-Completed and squashed into `master`:
+Completed milestones include:
 
 ```text
 0 — Repository and project setup
@@ -481,39 +485,41 @@ Completed and squashed into `master`:
 9A — Embedded exercise builder
 9B — Local embedded exercise JSONL cache
 9C — Streaming embedded exercise cache build workflow
+10A — Local fake-cache integration test
+10B — Cache build CLI
+10C — Runtime recommendation CLI
+11 — Local Sentence Transformers/Qwen embedding provider
+12 — Real dataset CSV compatibility and smoke tests
+13 — Recommendation debug/inspection tooling
+14A — README overview
+15A — Installable CLI entry points and script execution cleanup
+15B — SQLite raw exercise database
 ```
 
 ---
 
 ## 12. Next recommended milestone
 
-### Milestone 10A — End-to-end local fake-cache integration test
+### Milestone 15C — Build cache from SQLite
 
 Goal:
 
-Prove the whole local pipeline works together using temporary CSV and fake embeddings:
+Allow the cache-build CLI to choose SQLite as a raw exercise input source:
 
 ```text
-temporary CSV
-→ CsvExerciseRepository
+SQLiteExerciseRepository
 → build_embedded_exercise_cache
-→ LocalEmbeddedExerciseCache
-→ LocalEmbeddedExerciseRepository
-→ recommend_exercises
-→ final recommendations
+→ LocalEmbeddedExerciseCache JSONL
 ```
-
-This should be an integration-style test, not a CLI and not real embeddings yet.
 
 Rules:
 
-- Use temporary CSV/cache files through `tmp_path`.
-- Use fake/deterministic embeddings.
+- Keep embeddings in JSONL.
+- Use fake/deterministic embeddings in automated tests.
 - Do not call real embedding APIs.
-- Do not use a real dataset file yet.
-- Do not add CLI/FastAPI/Docker.
-- Do not change core architecture unless the test reveals a real bug.
-- Keep it scoped to proving the existing pieces connect correctly.
+- Do not run Qwen in automated tests.
+- Do not add FastAPI/frontend/Docker/cloud/vector database work.
+- Do not move embeddings into SQLite.
 
 ---
 
@@ -544,6 +550,7 @@ Pydantic v2
 pytest
 ruff
 standard library csv/json/pathlib/logging/typing/heapq
+standard library sqlite3
 ```
 
 Do not add dependencies unless explicitly approved.
@@ -554,7 +561,7 @@ Postponed dependencies:
 OpenAI/Gemini SDK
 python-dotenv
 pandas
-SQLite / SQLAlchemy
+SQLAlchemy
 FAISS / usearch / pgvector
 FastAPI
 uvicorn
@@ -665,7 +672,7 @@ real embedding API calls in unit tests
 hardcoded absolute paths
 hardcoded API keys
 mixing data loading, embedding, retrieval, explanation, and UI in one file
-adding FastAPI/Docker/SQLite before core local pipeline is verified
+adding FastAPI/Docker before core local pipeline is verified
 letting Codex implement multiple milestones at once
 ```
 

@@ -68,6 +68,7 @@ The goal is to build a maintainable local recommendation pipeline that can later
 
 - CSV exercise dataset parsing with validation
 - Support for both semicolon-style list fields and real dataset JSON-list fields
+- SQLite import and raw exercise repository adapter
 - Exercise text building from structured exercise fields
 - Query text building from structured and free-text user request fields
 - Fake deterministic embeddings for tests and local development
@@ -156,11 +157,12 @@ Examples:
 ```text
 adapters/csv_exercise_repository.py
 adapters/local_embedded_exercise_cache.py
+adapters/sqlite_exercise_repository.py
 adapters/local_deterministic_embedding_provider.py
 adapters/sentence_transformer_embedding_provider.py
 ```
 
-Adapters connect the core to CSV files, local JSONL caches, fake deterministic embeddings, and Sentence Transformers models.
+Adapters connect the core to CSV files, SQLite databases, local JSONL caches, fake deterministic embeddings, and Sentence Transformers models.
 
 ### CLI Layer
 
@@ -170,6 +172,7 @@ Packaged developer-facing entry points.
 cli/build_exercise_cache.py
 cli/demo_recommend.py
 cli/debug_recommendations.py
+cli/import_exercises_to_sqlite.py
 ```
 
 These CLI modules wire adapters and application functions together. They should not contain recommendation logic.
@@ -234,9 +237,21 @@ Example:
 data/cache/calisthenics_qwen_cache.jsonl
 ```
 
+Imported local SQLite raw exercise databases should live under:
+
+```text
+data/db/
+```
+
+Example:
+
+```text
+data/db/calisthenics_exercises.sqlite
+```
+
 The original CSV is treated as read-only input. The system reads from it but does not modify it.
 
-The real dataset file and generated cache files are intentionally gitignored local artifacts.
+The real dataset file, generated cache files, and local SQLite databases are intentionally gitignored local artifacts.
 
 The JSONL cache is derived data. It includes metadata such as:
 
@@ -283,6 +298,16 @@ No OpenAI API key is required.
 ---
 
 ## Usage Examples
+
+### Import CSV Exercises To SQLite
+
+This imports the raw exercise dataset into a local SQLite database. Embeddings still live in the JSONL cache.
+
+```powershell
+uv run import-exercises-to-sqlite `
+  --input-csv .\data\raw\calisthenics_exercises.csv `
+  --output-db .\data\db\calisthenics_exercises.sqlite
+```
 
 ### Build A Cache With Local Deterministic Embeddings
 
@@ -453,8 +478,7 @@ These limitations are intentional and tracked as future work.
 Likely next milestones:
 
 ```text
-14 - documentation and project polish
-15 - script execution and developer-experience cleanup
+15C - build cache from SQLite
 16 - FastAPI backend adapter
 17 - local backend demo with real cache
 18 - frontend UI
@@ -478,7 +502,7 @@ Possible recommendation-quality improvements later:
 
 A concise way to explain the project:
 
-> I built an embedding-based calisthenics exercise recommender using clean architecture. Raw exercises stream from a CSV repository, exercise embeddings are built offline and stored in a local JSONL cache, and runtime recommendation embeds only the user query. The recommender filters candidates deterministically by equipment and retrieves exact top-K matches from precomputed embeddings. The system supports fake deterministic embeddings for tests and local Sentence Transformers/Qwen embeddings for real semantic retrieval, while keeping domain, application logic, ports, adapters, and scripts separated.
+> I built an embedding-based calisthenics exercise recommender using clean architecture. Raw exercises stream through an `ExerciseRepository` backed by CSV or SQLite, exercise embeddings are built offline and stored in a local JSONL cache, and runtime recommendation embeds only the user query. The recommender filters candidates deterministically by equipment and retrieves exact top-K matches from precomputed embeddings. The system supports fake deterministic embeddings for tests and local Sentence Transformers/Qwen embeddings for real semantic retrieval, while keeping domain, application logic, ports, adapters, and scripts separated.
 
 Testing explanation:
 
@@ -486,4 +510,4 @@ Testing explanation:
 
 Storage explanation:
 
-> I treat embeddings as derived data, not source-of-truth data. The original CSV stays read-only, while embedded records are stored separately in a generated JSONL cache with metadata such as model name, embedding dimension, and text-builder version.
+> I treat embeddings as derived data, not source-of-truth data. The original CSV stays read-only, SQLite can store imported raw exercises locally, and embedded records are stored separately in a generated JSONL cache with metadata such as model name, embedding dimension, and text-builder version.

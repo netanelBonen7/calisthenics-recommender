@@ -16,6 +16,7 @@ dependencies = [
 build-exercise-cache = "calisthenics_recommender.cli.build_exercise_cache:main"
 demo-recommend = "calisthenics_recommender.cli.demo_recommend:main"
 debug-recommendations = "calisthenics_recommender.cli.debug_recommendations:main"
+import-exercises-to-sqlite = "calisthenics_recommender.cli.import_exercises_to_sqlite:main"
 
 [dependency-groups]
 dev = [

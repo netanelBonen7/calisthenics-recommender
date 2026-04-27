@@ -23,6 +23,7 @@ Completed milestones:
 - 13 — Recommendation debug/inspection tooling
 - 14A — README overview
 - 15A — Installable CLI entry points and script execution cleanup
+- 15B — SQLite raw exercise database
 
 Current capabilities:
 
@@ -31,7 +32,9 @@ Current capabilities:
   - `uv run build-exercise-cache`
   - `uv run demo-recommend`
   - `uv run debug-recommendations`
+  - `uv run import-exercises-to-sqlite`
 - Real dataset parsing from `data/raw/calisthenics_exercises.csv`
+- SQLite raw exercise import and repository under `data/db/`
 - Local JSONL embedding cache under `data/cache/`
 - Fake deterministic embeddings for tests and development
 - Local Qwen/Sentence Transformers embeddings for real semantic retrieval
@@ -68,6 +71,8 @@ CSV dataset
 ---
 
 ## Milestone 15B — SQLite Raw Exercise Database
+
+Status: completed.
 
 ### Goal
 
