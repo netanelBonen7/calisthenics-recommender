@@ -8,6 +8,10 @@ import pytest
 from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
     LocalEmbeddedExerciseRepository,
 )
+from calisthenics_recommender.adapters.sqlite_embedded_exercise_cache import (
+    SQLiteEmbeddedExerciseRepository,
+    read_sqlite_embedded_exercise_cache_metadata,
+)
 from calisthenics_recommender.adapters.sqlite_exercise_repository import (
     SQLiteExerciseRepository,
 )
@@ -17,6 +21,10 @@ def load_build_exercise_cache_module():
     return importlib.import_module(
         "calisthenics_recommender.cli.build_exercise_cache"
     )
+
+
+def load_wiring_module():
+    return importlib.import_module("calisthenics_recommender.wiring")
 
 
 def load_import_exercises_to_sqlite_module():
@@ -59,6 +67,48 @@ def write_exercise_csv(path: Path) -> None:
                 },
             ]
         )
+
+
+def write_build_config(
+    path: Path,
+    *,
+    raw_backend: str,
+    raw_path: Path,
+    cache_backend: str,
+    cache_path: Path,
+    embedding_provider: str = "local-deterministic",
+    embedding_model: str = "fake-hash-v1",
+    embedding_dimension: int | None = 4,
+    text_prefix: str = "",
+    text_builder_version: str = "v1",
+) -> None:
+    raw_path_key = "csv_path" if raw_backend == "csv" else "sqlite_path"
+    dimension_line = (
+        f"dimension = {embedding_dimension}\n"
+        if embedding_dimension is not None
+        else ""
+    )
+    text_prefix_line = f'text_prefix = "{text_prefix}"\n'
+
+    path.write_text(
+        (
+            "[raw_exercises]\n"
+            f'backend = "{raw_backend}"\n'
+            f'{raw_path_key} = "{raw_path.name}"\n'
+            "\n"
+            "[embedded_cache]\n"
+            f'backend = "{cache_backend}"\n'
+            f'path = "{cache_path.name}"\n'
+            "\n"
+            "[embedding]\n"
+            f'provider = "{embedding_provider}"\n'
+            f'model = "{embedding_model}"\n'
+            f"{dimension_line}"
+            f"{text_prefix_line}"
+            f'text_builder_version = "{text_builder_version}"\n'
+        ),
+        encoding="utf-8",
+    )
 
 
 def import_csv_to_sqlite(csv_path: Path, sqlite_path: Path) -> int:
@@ -233,7 +283,7 @@ def test_build_exercise_cache_main_supports_sentence_transformer_mode_without_re
             return [1.0, 0.0, 0.0]
 
     monkeypatch.setattr(
-        module,
+        load_wiring_module(),
         "SentenceTransformerEmbeddingProvider",
         FakeSentenceTransformerEmbeddingProvider,
     )
@@ -262,6 +312,116 @@ def test_build_exercise_cache_main_supports_sentence_transformer_mode_without_re
         "type": "metadata",
         "embedding_model": "custom/local-model",
         "embedding_dimension": 3,
+        "text_builder_version": "v1",
+    }
+
+
+def test_build_exercise_cache_main_uses_jsonl_config_when_flags_are_omitted(tmp_path):
+    module = load_build_exercise_cache_module()
+    csv_path = tmp_path / "exercises.csv"
+    cache_path = tmp_path / "embedded_exercises.jsonl"
+    config_path = tmp_path / "build.toml"
+    write_exercise_csv(csv_path)
+    write_build_config(
+        config_path,
+        raw_backend="csv",
+        raw_path=csv_path,
+        cache_backend="jsonl",
+        cache_path=cache_path,
+    )
+
+    exit_code = module.main(["--config", str(config_path)])
+
+    assert exit_code == 0
+    assert cache_path.exists()
+    embedded_exercises = list(
+        LocalEmbeddedExerciseRepository(cache_path).iter_embedded_exercises()
+    )
+    assert [item.exercise.name for item in embedded_exercises] == [
+        "Pull Up Negative",
+        "Body Row",
+    ]
+
+
+def test_build_exercise_cache_main_uses_sqlite_config_when_flags_are_omitted(tmp_path):
+    module = load_build_exercise_cache_module()
+    csv_path = tmp_path / "exercises.csv"
+    sqlite_cache_path = tmp_path / "embedded_exercises.sqlite"
+    config_path = tmp_path / "build.toml"
+    write_exercise_csv(csv_path)
+    write_build_config(
+        config_path,
+        raw_backend="csv",
+        raw_path=csv_path,
+        cache_backend="sqlite",
+        cache_path=sqlite_cache_path,
+    )
+
+    exit_code = module.main(["--config", str(config_path)])
+
+    assert exit_code == 0
+    metadata = read_sqlite_embedded_exercise_cache_metadata(sqlite_cache_path)
+    assert metadata.embedding_model == "fake-hash-v1"
+    assert metadata.embedding_dimension == 4
+    assert metadata.text_builder_version == "v1"
+    embedded_exercises = list(
+        SQLiteEmbeddedExerciseRepository(sqlite_cache_path).iter_embedded_exercises()
+    )
+    assert [item.exercise.name for item in embedded_exercises] == [
+        "Pull Up Negative",
+        "Body Row",
+    ]
+
+
+def test_build_exercise_cache_main_explicit_flags_override_config_values(tmp_path):
+    module = load_build_exercise_cache_module()
+    csv_path = tmp_path / "exercises.csv"
+    sqlite_path = tmp_path / "exercises.sqlite"
+    configured_cache_path = tmp_path / "configured.jsonl"
+    explicit_cache_path = tmp_path / "explicit.jsonl"
+    config_path = tmp_path / "build.toml"
+    write_exercise_csv(csv_path)
+    import_exit_code = import_csv_to_sqlite(csv_path, sqlite_path)
+    write_build_config(
+        config_path,
+        raw_backend="csv",
+        raw_path=tmp_path / "missing.csv",
+        cache_backend="jsonl",
+        cache_path=configured_cache_path,
+        embedding_model="configured-model",
+        embedding_dimension=8,
+        text_prefix="configured: ",
+        text_builder_version="configured-v1",
+    )
+
+    exit_code = module.main(
+        [
+            "--config",
+            str(config_path),
+            "--input-db",
+            str(sqlite_path),
+            "--output-cache",
+            str(explicit_cache_path),
+            "--embedding-model",
+            "fake-hash-v1",
+            "--embedding-dimension",
+            "4",
+            "--text-prefix",
+            "",
+            "--text-builder-version",
+            "v1",
+        ]
+    )
+
+    assert import_exit_code == 0
+    assert exit_code == 0
+    assert explicit_cache_path.exists()
+    assert not configured_cache_path.exists()
+    first_line = explicit_cache_path.read_text(encoding="utf-8").splitlines()[0]
+    assert json.loads(first_line) == {
+        "type": "metadata",
+        "embedding_model": "fake-hash-v1",
+        "embedding_dimension": 4,
         "text_builder_version": "v1",
     }
 

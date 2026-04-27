@@ -2,15 +2,31 @@ import csv
 import importlib
 from pathlib import Path
 
+from calisthenics_recommender.adapters.local_deterministic_embedding_provider import (
+    LocalDeterministicEmbeddingProvider,
+)
 from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
+    EmbeddedExerciseCacheMetadata,
     read_embedded_exercise_cache_metadata,
 )
+from calisthenics_recommender.adapters.sqlite_embedded_exercise_cache import (
+    SQLiteEmbeddedExerciseCache,
+)
+from calisthenics_recommender.application.exercise_text_builder import (
+    build_exercise_text,
+)
+from calisthenics_recommender.domain.embedded_exercise import EmbeddedExercise
+from calisthenics_recommender.domain.exercise import Exercise
 
 
 def load_build_exercise_cache_module():
     return importlib.import_module(
         "calisthenics_recommender.cli.build_exercise_cache"
     )
+
+
+def load_wiring_module():
+    return importlib.import_module("calisthenics_recommender.wiring")
 
 
 def load_demo_recommend_module():
@@ -61,6 +77,35 @@ def write_exercise_csv(path: Path) -> None:
         )
 
 
+def make_exercises() -> list[Exercise]:
+    return [
+        Exercise(
+            name="Pull Up Negative",
+            description="A controlled eccentric pull-up variation.",
+            muscle_groups=["Back", "Biceps"],
+            families=["Pull-up"],
+            materials=["Bar"],
+            categories=["Upper Body Pull"],
+        ),
+        Exercise(
+            name="Body Row",
+            description="A horizontal pulling variation with a bar.",
+            muscle_groups=["Back", "Biceps"],
+            families=["Pull-up"],
+            materials=["Bar"],
+            categories=["Upper Body Pull"],
+        ),
+        Exercise(
+            name="Ring Pull Up",
+            description="A pull-up variation that requires rings.",
+            muscle_groups=["Back", "Biceps"],
+            families=["Pull-up"],
+            materials=["Rings"],
+            categories=["Upper Body Pull"],
+        ),
+    ]
+
+
 def build_cache(csv_path: Path, cache_path: Path) -> None:
     build_module = load_build_exercise_cache_module()
     exit_code = build_module.main(
@@ -79,6 +124,41 @@ def build_cache(csv_path: Path, cache_path: Path) -> None:
     )
 
     assert exit_code == 0
+
+
+def write_sqlite_cache(cache_path: Path) -> None:
+    embedding_provider = LocalDeterministicEmbeddingProvider(dimension=4)
+    embedded_exercises = [
+        EmbeddedExercise(
+            exercise=exercise,
+            embedding=tuple(embedding_provider.embed(build_exercise_text(exercise))),
+        )
+        for exercise in make_exercises()
+    ]
+    SQLiteEmbeddedExerciseCache(cache_path).write_embedded_exercises(
+        embedded_exercises,
+        EmbeddedExerciseCacheMetadata(
+            embedding_model="fake-hash-v1",
+            embedding_dimension=4,
+            text_builder_version="v1",
+        ),
+    )
+
+
+def write_demo_config(path: Path, *, cache_backend: str, cache_path: Path) -> None:
+    path.write_text(
+        (
+            "[embedded_cache]\n"
+            f'backend = "{cache_backend}"\n'
+            f'path = "{cache_path.name}"\n'
+            "\n"
+            "[embedding]\n"
+            'provider = "local-deterministic"\n'
+            'model = "fake-hash-v1"\n'
+            'query_prefix = ""\n'
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_demo_recommend_main_prints_human_readable_recommendations_from_existing_cache(
@@ -170,12 +250,7 @@ def test_demo_recommend_main_supports_sentence_transformer_mode_without_real_mod
             return [1.0, 0.0, 0.0]
 
     monkeypatch.setattr(
-        build_module,
-        "SentenceTransformerEmbeddingProvider",
-        FakeSentenceTransformerEmbeddingProvider,
-    )
-    monkeypatch.setattr(
-        demo_module,
+        load_wiring_module(),
         "SentenceTransformerEmbeddingProvider",
         FakeSentenceTransformerEmbeddingProvider,
     )
@@ -227,3 +302,73 @@ def test_demo_recommend_main_supports_sentence_transformer_mode_without_real_mod
     assert "Pull Up Negative" in output
     assert "Ring Pull Up" not in output
     assert "Match score:" in output
+
+
+def test_demo_recommend_main_supports_jsonl_config(tmp_path, capsys):
+    csv_path = tmp_path / "exercises.csv"
+    cache_path = tmp_path / "embedded_exercises.jsonl"
+    config_path = tmp_path / "demo.toml"
+    write_exercise_csv(csv_path)
+    build_cache(csv_path, cache_path)
+    write_demo_config(
+        config_path,
+        cache_backend="jsonl",
+        cache_path=cache_path,
+    )
+    demo_module = load_demo_recommend_module()
+
+    exit_code = demo_module.main(
+        [
+            "--config",
+            str(config_path),
+            "--target-family",
+            "Pull-up",
+            "--goal",
+            "I want to build pulling strength and improve pull-ups.",
+            "--current-level",
+            "I can do a few strict pull-ups.",
+            "--available-equipment",
+            "Bar",
+            "--limit",
+            "3",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Pull Up Negative" in output
+    assert "Ring Pull Up" not in output
+
+
+def test_demo_recommend_main_supports_sqlite_config(tmp_path, capsys):
+    cache_path = tmp_path / "embedded_exercises.sqlite"
+    config_path = tmp_path / "demo.toml"
+    write_sqlite_cache(cache_path)
+    write_demo_config(
+        config_path,
+        cache_backend="sqlite",
+        cache_path=cache_path,
+    )
+    demo_module = load_demo_recommend_module()
+
+    exit_code = demo_module.main(
+        [
+            "--config",
+            str(config_path),
+            "--target-family",
+            "Pull-up",
+            "--goal",
+            "I want to build pulling strength and improve pull-ups.",
+            "--current-level",
+            "I can do a few strict pull-ups.",
+            "--available-equipment",
+            "Bar",
+            "--limit",
+            "3",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Pull Up Negative" in output
+    assert "Ring Pull Up" not in output

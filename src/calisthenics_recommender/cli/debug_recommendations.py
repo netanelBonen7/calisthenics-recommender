@@ -4,59 +4,75 @@ import argparse
 from pathlib import Path
 from typing import Sequence
 
-from calisthenics_recommender.adapters.csv_exercise_repository import (
-    CsvExerciseRepository,
-)
-from calisthenics_recommender.adapters.jsonl_embedded_exercise_search_repository import (
-    JsonlEmbeddedExerciseSearchRepository,
-)
-from calisthenics_recommender.adapters.local_deterministic_embedding_provider import (
-    LocalDeterministicEmbeddingProvider,
-)
-from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
-    EmbeddedExerciseCacheMetadata,
-    LocalEmbeddedExerciseRepository,
-    read_embedded_exercise_cache_metadata,
-)
-from calisthenics_recommender.adapters.sentence_transformer_embedding_provider import (
-    SentenceTransformerEmbeddingProvider,
-)
 from calisthenics_recommender.application.exercise_text_builder import (
     build_exercise_text,
 )
 from calisthenics_recommender.application.query_builder import build_query_text
+from calisthenics_recommender.config import (
+    EmbeddedCacheConfig,
+    EmbeddingConfig,
+    RawExercisesConfig,
+    RecommenderConfig,
+    load_recommender_config,
+)
 from calisthenics_recommender.domain.user_request import UserRequest
-from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
+from calisthenics_recommender.ports.exercise_repository import ExerciseRepository
+from calisthenics_recommender.wiring import (
+    build_embedded_exercise_search_repository,
+    build_exercise_repository,
+    build_query_embedding_provider,
+    read_embedded_cache_metadata,
+)
 
 
-def build_argument_parser() -> argparse.ArgumentParser:
+def build_argument_parser(
+    config: RecommenderConfig | None = None,
+) -> argparse.ArgumentParser:
+    embedded_cache_config = None if config is None else config.embedded_cache
+    embedding_config = None if config is None else config.embedding
+
     parser = argparse.ArgumentParser(
         description=(
             "Inspect query text, exercise text, and retrieval candidates using "
             "the current recommendation builders and an existing local cache."
         )
     )
+    parser.add_argument("--config", type=Path)
     parser.add_argument("--input-csv", type=Path)
     parser.add_argument("--exercise-name", action="append")
-    parser.add_argument("--cache-path", type=Path)
+    parser.add_argument(
+        "--cache-path",
+        type=Path,
+        default=(
+            None if embedded_cache_config is None else embedded_cache_config.path
+        ),
+    )
     parser.add_argument(
         "--embedding-provider",
         choices=("local-deterministic", "sentence-transformer"),
-        default="local-deterministic",
+        default=_default_embedding_provider(embedding_config),
     )
-    parser.add_argument("--embedding-model")
+    parser.add_argument(
+        "--embedding-model",
+        default=None if embedding_config is None else embedding_config.model,
+    )
     parser.add_argument("--target-family")
     parser.add_argument("--goal")
     parser.add_argument("--current-level")
     parser.add_argument("--available-equipment", action="append")
-    parser.add_argument("--query-prefix", default="")
+    parser.add_argument(
+        "--query-prefix",
+        default="" if embedding_config is None else embedding_config.query_prefix,
+    )
     parser.add_argument("--limit", type=int, default=5)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_argument_parser().parse_args(list(argv) if argv is not None else None)
-    _validate_args(args)
+    argv_list = list(argv) if argv is not None else None
+    config = _load_optional_config(argv_list)
+    args = build_argument_parser(config).parse_args(argv_list)
+    _validate_args(args, config)
     user_request = (
         _build_user_request(args) if _has_complete_user_request_args(args) else None
     )
@@ -66,16 +82,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.exercise_name:
         _print_exercise_texts(
-            input_csv=args.input_csv,
+            exercise_repository=_build_exercise_text_repository(args, config),
             requested_names=list(args.exercise_name),
         )
 
     if args.cache_path is not None and user_request is not None:
         _print_top_candidates(
-            cache_path=args.cache_path,
-            embedding_provider_name=args.embedding_provider,
-            embedding_model=args.embedding_model,
-            query_prefix=args.query_prefix,
+            embedded_cache_config=_resolve_embedded_cache_config(args, config),
+            embedding_config=_resolve_embedding_config(args),
             user_request=user_request,
             limit=args.limit,
         )
@@ -83,12 +97,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _validate_args(args: argparse.Namespace) -> None:
+def _default_embedding_provider(embedding_config: EmbeddingConfig | None) -> str:
+    if embedding_config is None:
+        return "local-deterministic"
+    return embedding_config.provider
+
+
+def _load_optional_config(argv: Sequence[str] | None) -> RecommenderConfig | None:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--config", type=Path)
+    args, _ = parser.parse_known_args(argv)
+    if args.config is None:
+        return None
+    return load_recommender_config(args.config)
+
+
+def _validate_args(
+    args: argparse.Namespace,
+    config: RecommenderConfig | None,
+) -> None:
     has_complete_request = _has_complete_user_request_args(args)
     has_any_request_fields = _has_any_user_request_args(args)
+    has_raw_source = args.input_csv is not None or (
+        config is not None and config.raw_exercises is not None
+    )
 
-    if args.exercise_name and args.input_csv is None:
-        raise ValueError("--exercise-name requires --input-csv")
+    if args.exercise_name and not has_raw_source:
+        raise ValueError("--exercise-name requires --input-csv or configured raw_exercises")
 
     if args.cache_path is not None and not has_complete_request:
         raise ValueError(
@@ -106,8 +141,7 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--limit must be greater than 0")
 
     if (
-        args.input_csv is None
-        and args.cache_path is None
+        args.cache_path is None
         and not has_complete_request
         and not args.exercise_name
     ):
@@ -141,16 +175,57 @@ def _build_user_request(args: argparse.Namespace) -> UserRequest:
     )
 
 
+def _resolve_embedded_cache_config(
+    args: argparse.Namespace,
+    config: RecommenderConfig | None,
+) -> EmbeddedCacheConfig:
+    if args.cache_path is None:
+        raise ValueError("--cache-path is required")
+
+    backend = "jsonl"
+    if config is not None and config.embedded_cache is not None:
+        backend = config.embedded_cache.backend
+
+    return EmbeddedCacheConfig(
+        backend=backend,
+        path=args.cache_path,
+    )
+
+
+def _resolve_embedding_config(args: argparse.Namespace) -> EmbeddingConfig:
+    return EmbeddingConfig(
+        provider=args.embedding_provider,
+        model=args.embedding_model,
+        query_prefix=args.query_prefix,
+    )
+
+
+def _build_exercise_text_repository(
+    args: argparse.Namespace,
+    config: RecommenderConfig | None,
+) -> ExerciseRepository:
+    if args.input_csv is not None:
+        return build_exercise_repository(
+            RawExercisesConfig(backend="csv", path=args.input_csv)
+        )
+    if config is None or config.raw_exercises is None:
+        raise ValueError("--exercise-name requires --input-csv or configured raw_exercises")
+    return build_exercise_repository(config.raw_exercises)
+
+
 def _print_query_text(user_request: UserRequest) -> None:
     print("=== QUERY TEXT ===")
     print(build_query_text(user_request))
 
 
-def _print_exercise_texts(*, input_csv: Path, requested_names: list[str]) -> None:
+def _print_exercise_texts(
+    *,
+    exercise_repository: ExerciseRepository,
+    requested_names: list[str],
+) -> None:
     matches_by_name = {name: [] for name in requested_names}
-    repository = CsvExerciseRepository(input_csv)
 
-    for exercise in repository.iter_exercises():
+    for exercise in exercise_repository.iter_exercises():
         if exercise.name in matches_by_name:
             matches_by_name[exercise.name].append(exercise)
 
@@ -175,24 +250,20 @@ def _print_exercise_texts(*, input_csv: Path, requested_names: list[str]) -> Non
 
 def _print_top_candidates(
     *,
-    cache_path: Path,
-    embedding_provider_name: str,
-    embedding_model: str | None,
-    query_prefix: str,
+    embedded_cache_config: EmbeddedCacheConfig,
+    embedding_config: EmbeddingConfig,
     user_request: UserRequest,
     limit: int,
 ) -> None:
-    metadata = read_embedded_exercise_cache_metadata(cache_path)
-    embedding_provider = _build_embedding_provider(
-        embedding_provider_name=embedding_provider_name,
-        embedding_model=embedding_model,
+    metadata = read_embedded_cache_metadata(embedded_cache_config)
+    embedding_provider = build_query_embedding_provider(
+        embedding_config=embedding_config,
         metadata=metadata,
-        query_prefix=query_prefix,
     )
     query_text = build_query_text(user_request)
     query_embedding = embedding_provider.embed(query_text)
-    search_repository = JsonlEmbeddedExerciseSearchRepository(
-        LocalEmbeddedExerciseRepository(cache_path)
+    search_repository = build_embedded_exercise_search_repository(
+        embedded_cache_config
     )
     search_results = search_repository.search(
         query_embedding=query_embedding,
@@ -216,31 +287,6 @@ def _print_top_candidates(
         print("   Exercise text:")
         for line in build_exercise_text(exercise).splitlines():
             print(f"   {line}")
-
-
-def _build_embedding_provider(
-    *,
-    embedding_provider_name: str,
-    embedding_model: str | None,
-    metadata: EmbeddedExerciseCacheMetadata,
-    query_prefix: str,
-) -> EmbeddingProvider:
-    if embedding_provider_name == "sentence-transformer":
-        model_name = embedding_model or metadata.embedding_model
-        embedding_provider = SentenceTransformerEmbeddingProvider(
-            model_name=model_name,
-            text_prefix=query_prefix,
-        )
-        embedding_dimension = embedding_provider.get_embedding_dimension()
-        if embedding_dimension != metadata.embedding_dimension:
-            raise ValueError(
-                "Sentence-transformer embedding dimension does not match cache metadata"
-            )
-        return embedding_provider
-
-    return LocalDeterministicEmbeddingProvider(
-        dimension=metadata.embedding_dimension
-    )
 
 
 if __name__ == "__main__":

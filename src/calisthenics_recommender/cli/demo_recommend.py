@@ -4,62 +4,77 @@ import argparse
 from pathlib import Path
 from typing import Sequence
 
-from calisthenics_recommender.adapters.local_deterministic_embedding_provider import (
-    LocalDeterministicEmbeddingProvider,
-)
-from calisthenics_recommender.adapters.jsonl_embedded_exercise_search_repository import (
-    JsonlEmbeddedExerciseSearchRepository,
-)
-from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
-    EmbeddedExerciseCacheMetadata,
-    LocalEmbeddedExerciseRepository,
-    read_embedded_exercise_cache_metadata,
-)
-from calisthenics_recommender.adapters.sentence_transformer_embedding_provider import (
-    SentenceTransformerEmbeddingProvider,
-)
 from calisthenics_recommender.application.recommend_exercises import (
     recommend_exercises,
 )
+from calisthenics_recommender.config import (
+    EmbeddedCacheConfig,
+    EmbeddingConfig,
+    RecommenderConfig,
+    load_recommender_config,
+)
 from calisthenics_recommender.domain.recommendation import Recommendation
 from calisthenics_recommender.domain.user_request import UserRequest
-from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
+from calisthenics_recommender.wiring import (
+    build_embedded_exercise_search_repository,
+    build_query_embedding_provider,
+    read_embedded_cache_metadata,
+)
 
 
-def build_argument_parser() -> argparse.ArgumentParser:
+def build_argument_parser(
+    config: RecommenderConfig | None = None,
+) -> argparse.ArgumentParser:
+    embedded_cache_config = None if config is None else config.embedded_cache
+    embedding_config = None if config is None else config.embedding
+
     parser = argparse.ArgumentParser(
         description=(
             "Read an existing local embedded exercise cache and print "
             "human-readable exercise recommendations for a user request."
         )
     )
-    parser.add_argument("--cache-path", required=True, type=Path)
+    parser.add_argument("--config", type=Path)
+    parser.add_argument(
+        "--cache-path",
+        required=embedded_cache_config is None,
+        type=Path,
+        default=(
+            None if embedded_cache_config is None else embedded_cache_config.path
+        ),
+    )
     parser.add_argument(
         "--embedding-provider",
         choices=("local-deterministic", "sentence-transformer"),
-        default="local-deterministic",
+        default=_default_embedding_provider(embedding_config),
     )
-    parser.add_argument("--embedding-model")
+    parser.add_argument(
+        "--embedding-model",
+        default=None if embedding_config is None else embedding_config.model,
+    )
     parser.add_argument("--target-family", required=True)
     parser.add_argument("--goal", required=True)
     parser.add_argument("--current-level", required=True)
     parser.add_argument("--available-equipment", required=True, action="append")
-    parser.add_argument("--query-prefix", default="")
+    parser.add_argument(
+        "--query-prefix",
+        default="" if embedding_config is None else embedding_config.query_prefix,
+    )
     parser.add_argument("--limit", type=int, default=5)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_argument_parser().parse_args(list(argv) if argv is not None else None)
+    argv_list = list(argv) if argv is not None else None
+    config = _load_optional_config(argv_list)
+    args = build_argument_parser(config).parse_args(argv_list)
 
-    metadata = read_embedded_exercise_cache_metadata(args.cache_path)
-    embedding_provider = _build_embedding_provider(
-        embedding_provider_name=args.embedding_provider,
-        embedding_model=args.embedding_model,
+    embedded_cache_config = _resolve_embedded_cache_config(args, config)
+    metadata = read_embedded_cache_metadata(embedded_cache_config)
+    embedding_provider = build_query_embedding_provider(
+        embedding_config=_resolve_embedding_config(args),
         metadata=metadata,
-        query_prefix=args.query_prefix,
     )
-    embedded_exercise_repository = LocalEmbeddedExerciseRepository(args.cache_path)
     user_request = UserRequest(
         target_family=args.target_family,
         goal=args.goal,
@@ -68,8 +83,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     recommendations = recommend_exercises(
         user_request=user_request,
-        embedded_exercise_search_repository=JsonlEmbeddedExerciseSearchRepository(
-            embedded_exercise_repository
+        embedded_exercise_search_repository=build_embedded_exercise_search_repository(
+            embedded_cache_config
         ),
         embedding_provider=embedding_provider,
         limit=args.limit,
@@ -79,28 +94,43 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _build_embedding_provider(
-    *,
-    embedding_provider_name: str,
-    embedding_model: str | None,
-    metadata: EmbeddedExerciseCacheMetadata,
-    query_prefix: str,
-) -> EmbeddingProvider:
-    if embedding_provider_name == "sentence-transformer":
-        model_name = embedding_model or metadata.embedding_model
-        embedding_provider = SentenceTransformerEmbeddingProvider(
-            model_name=model_name,
-            text_prefix=query_prefix,
-        )
-        embedding_dimension = embedding_provider.get_embedding_dimension()
-        if embedding_dimension != metadata.embedding_dimension:
-            raise ValueError(
-                "Sentence-transformer embedding dimension does not match cache metadata"
-            )
-        return embedding_provider
+def _default_embedding_provider(embedding_config: EmbeddingConfig | None) -> str:
+    if embedding_config is None:
+        return "local-deterministic"
+    return embedding_config.provider
 
-    return LocalDeterministicEmbeddingProvider(
-        dimension=metadata.embedding_dimension
+
+def _load_optional_config(argv: Sequence[str] | None) -> RecommenderConfig | None:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--config", type=Path)
+    args, _ = parser.parse_known_args(argv)
+    if args.config is None:
+        return None
+    return load_recommender_config(args.config)
+
+
+def _resolve_embedded_cache_config(
+    args: argparse.Namespace,
+    config: RecommenderConfig | None,
+) -> EmbeddedCacheConfig:
+    if args.cache_path is None:
+        raise ValueError("--cache-path is required")
+
+    backend = "jsonl"
+    if config is not None and config.embedded_cache is not None:
+        backend = config.embedded_cache.backend
+
+    return EmbeddedCacheConfig(
+        backend=backend,
+        path=args.cache_path,
+    )
+
+
+def _resolve_embedding_config(args: argparse.Namespace) -> EmbeddingConfig:
+    return EmbeddingConfig(
+        provider=args.embedding_provider,
+        model=args.embedding_model,
+        query_prefix=args.query_prefix,
     )
 
 

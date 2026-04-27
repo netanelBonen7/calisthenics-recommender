@@ -5,25 +5,8 @@ from typing import Mapping
 
 from fastapi import FastAPI
 
-from calisthenics_recommender.adapters.jsonl_embedded_exercise_search_repository import (
-    JsonlEmbeddedExerciseSearchRepository,
-)
-from calisthenics_recommender.adapters.local_deterministic_embedding_provider import (
-    LocalDeterministicEmbeddingProvider,
-)
 from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
     EmbeddedExerciseCacheMetadata,
-    LocalEmbeddedExerciseRepository,
-    read_embedded_exercise_cache_metadata,
-)
-from calisthenics_recommender.adapters.sentence_transformer_embedding_provider import (
-    SentenceTransformerEmbeddingProvider,
-)
-from calisthenics_recommender.adapters.sqlite_embedded_exercise_cache import (
-    read_sqlite_embedded_exercise_cache_metadata,
-)
-from calisthenics_recommender.adapters.sqlite_embedded_exercise_search_repository import (
-    SQLiteEmbeddedExerciseSearchRepository,
 )
 from calisthenics_recommender.api.app import create_app
 from calisthenics_recommender.config import (
@@ -33,6 +16,11 @@ from calisthenics_recommender.config import (
 from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
 from calisthenics_recommender.ports.embedded_exercise_search_repository import (
     EmbeddedExerciseSearchRepository,
+)
+from calisthenics_recommender.wiring import (
+    build_embedded_exercise_search_repository,
+    build_query_embedding_provider,
+    read_embedded_cache_metadata,
 )
 
 
@@ -68,11 +56,8 @@ def create_configured_app_from_env(
 def _build_embedded_exercise_search_repository(
     config: ApiRuntimeConfig,
 ) -> EmbeddedExerciseSearchRepository:
-    if config.embedded_cache.backend == "sqlite":
-        return SQLiteEmbeddedExerciseSearchRepository(config.embedded_cache.path)
-
-    return JsonlEmbeddedExerciseSearchRepository(
-        LocalEmbeddedExerciseRepository(config.embedded_cache.path)
+    return build_embedded_exercise_search_repository(
+        config.embedded_cache
     )
 
 
@@ -81,34 +66,14 @@ def _build_embedding_provider(
     config: ApiRuntimeConfig,
     metadata: EmbeddedExerciseCacheMetadata,
 ) -> EmbeddingProvider:
-    if config.embedding.provider == "sentence-transformer":
-        model_name = config.embedding.model or metadata.embedding_model
-        embedding_provider = SentenceTransformerEmbeddingProvider(
-            model_name=model_name,
-            text_prefix=config.embedding.query_prefix,
-        )
-        embedding_dimension = embedding_provider.get_embedding_dimension()
-        if embedding_dimension != metadata.embedding_dimension:
-            raise ValueError(
-                "Sentence-transformer embedding dimension does not match cache metadata"
-            )
-        return embedding_provider
-
-    return LocalDeterministicEmbeddingProvider(
-        dimension=metadata.embedding_dimension
+    return build_query_embedding_provider(
+        embedding_config=config.embedding,
+        metadata=metadata,
     )
 
 
 def _read_cache_metadata(config: ApiRuntimeConfig) -> EmbeddedExerciseCacheMetadata:
-    cache_path = config.embedded_cache.path
-    try:
-        if config.embedded_cache.backend == "sqlite":
-            return read_sqlite_embedded_exercise_cache_metadata(cache_path)
-        return read_embedded_exercise_cache_metadata(cache_path)
-    except (FileNotFoundError, OSError, ValueError) as error:
-        raise ValueError(
-            f"Invalid embedded exercise cache metadata for {cache_path}: {error}"
-        ) from error
+    return read_embedded_cache_metadata(config.embedded_cache)
 
 
 def _require_env_var(environ: Mapping[str, str], name: str) -> str:

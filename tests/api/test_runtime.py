@@ -236,6 +236,10 @@ def load_runtime_module():
     return importlib.import_module("calisthenics_recommender.api.runtime")
 
 
+def load_wiring_module():
+    return importlib.import_module("calisthenics_recommender.wiring")
+
+
 def test_create_configured_app_from_env_supports_jsonl_local_deterministic_mode(
     tmp_path,
 ):
@@ -301,7 +305,7 @@ def test_create_configured_app_from_env_supports_jsonl_sentence_transformer_mode
             return [1.0, 0.0, 0.0]
 
     monkeypatch.setattr(
-        runtime_module,
+        load_wiring_module(),
         "SentenceTransformerEmbeddingProvider",
         FakeSentenceTransformerEmbeddingProvider,
     )
@@ -380,7 +384,7 @@ def test_create_configured_app_from_env_supports_sqlite_sentence_transformer_mod
             return [1.0, 0.0, 0.0]
 
     monkeypatch.setattr(
-        runtime_module,
+        load_wiring_module(),
         "SentenceTransformerEmbeddingProvider",
         FakeSentenceTransformerEmbeddingProvider,
     )
@@ -480,7 +484,7 @@ def test_create_configured_app_from_env_rejects_sentence_transformer_dimension_m
             return [1.0, 0.0]
 
     monkeypatch.setattr(
-        runtime_module,
+        load_wiring_module(),
         "SentenceTransformerEmbeddingProvider",
         FakeSentenceTransformerEmbeddingProvider,
     )

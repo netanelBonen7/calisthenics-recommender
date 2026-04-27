@@ -6,7 +6,7 @@ Status: v1 closed.
 
 The `v1` tag is the stable local API MVP baseline. It can parse a raw exercise dataset, import raw exercises into SQLite, build a local embedded exercise cache, serve recommendations from that cache through CLI commands, and expose the same recommender through FastAPI.
 
-The current v2 branch adds SQLite embedded cache support, an embedded search port, JSONL and SQLite search adapters, and a config-driven FastAPI runtime. CLI config support and Docker are still future work.
+The current v2 branch adds SQLite embedded cache support, an embedded search port, JSONL and SQLite search adapters, a config-driven FastAPI runtime, and operator CLI `--config` support. Docker is still future work.
 
 ---
 
@@ -297,6 +297,37 @@ uv run build-exercise-cache `
   --text-builder-version v1
 ```
 
+### Shared Runtime And CLI Config
+
+`build-exercise-cache`, `demo-recommend`, and `debug-recommendations` also support `--config` for operator-facing backend and embedding settings.
+
+```toml
+[raw_exercises]
+backend = "sqlite"
+csv_path = "data/raw/calisthenics_exercises.csv"
+sqlite_path = "data/db/calisthenics_exercises.sqlite"
+
+[embedded_cache]
+backend = "sqlite"
+path = "data/cache/calisthenics_embeddings.sqlite"
+
+[embedding]
+provider = "sentence-transformer"
+model = "Qwen/Qwen3-Embedding-0.6B"
+dimension = 4
+query_prefix = ""
+text_prefix = ""
+text_builder_version = "v1"
+```
+
+Explicit CLI flags still win over matching config values.
+
+Build a cache from config:
+
+```powershell
+uv run build-exercise-cache --config .\runtime.toml
+```
+
 ### Run FastAPI Locally
 
 Use a runtime TOML config file and point the API to it with `CALISTHENICS_RECOMMENDER_CONFIG_PATH`.
@@ -347,6 +378,18 @@ Invoke-RestMethod `
 
 ```powershell
 uv run demo-recommend `
+  --config .\runtime.toml `
+  --target-family "Pull-up" `
+  --goal "I want to build pulling strength and improve my strict pull-ups." `
+  --current-level "I can do a few strict pull-ups but my last reps are slow." `
+  --available-equipment "Bar" `
+  --limit 5
+```
+
+The explicit-flag workflow still works too:
+
+```powershell
+uv run demo-recommend `
   --cache-path .\data\cache\calisthenics_qwen_cache.jsonl `
   --embedding-provider sentence-transformer `
   --embedding-model "Qwen/Qwen3-Embedding-0.6B" `
@@ -365,6 +408,15 @@ Inspect query text and selected exercise texts:
 
 ```powershell
 uv run debug-recommendations `
+  --config .\runtime.toml `
+  --exercise-name "Pull Up" `
+  --exercise-name "Row"
+```
+
+Inspect query text and selected exercise texts with explicit flags:
+
+```powershell
+uv run debug-recommendations `
   --input-csv .\data\raw\calisthenics_exercises.csv `
   --exercise-name "Pull Up" `
   --exercise-name "Row" `
@@ -375,6 +427,18 @@ uv run debug-recommendations `
 ```
 
 Inspect top retrieval candidates from a JSONL embedded cache:
+
+```powershell
+uv run debug-recommendations `
+  --config .\runtime.toml `
+  --target-family "Pull-up" `
+  --goal "I want to build pulling strength and improve my strict pull-ups." `
+  --current-level "I can do a few strict pull-ups but my last reps are slow." `
+  --available-equipment "Bar" `
+  --limit 10
+```
+
+The explicit-flag workflow still works here too:
 
 ```powershell
 uv run debug-recommendations `

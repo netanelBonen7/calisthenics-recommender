@@ -8,6 +8,12 @@ from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
     EmbeddedExerciseCacheMetadata,
     LocalEmbeddedExerciseCache,
 )
+from calisthenics_recommender.adapters.sqlite_embedded_exercise_cache import (
+    SQLiteEmbeddedExerciseCache,
+)
+from calisthenics_recommender.adapters.sqlite_exercise_repository import (
+    write_exercises_to_sqlite,
+)
 from calisthenics_recommender.application.exercise_text_builder import (
     build_exercise_text,
 )
@@ -21,6 +27,10 @@ def load_build_exercise_cache_module():
     return importlib.import_module(
         "calisthenics_recommender.cli.build_exercise_cache"
     )
+
+
+def load_wiring_module():
+    return importlib.import_module("calisthenics_recommender.wiring")
 
 
 def load_debug_recommendations_module():
@@ -64,6 +74,50 @@ def build_cache(csv_path: Path, cache_path: Path) -> None:
     )
 
     assert exit_code == 0
+
+
+def build_sqlite_cache(cache_path: Path, embedded_exercises: list[EmbeddedExercise]) -> None:
+    SQLiteEmbeddedExerciseCache(cache_path).write_embedded_exercises(
+        embedded_exercises,
+        EmbeddedExerciseCacheMetadata(
+            embedding_model="fake-hash-v1",
+            embedding_dimension=4,
+            text_builder_version="v1",
+        ),
+    )
+
+
+def write_debug_config(
+    path: Path,
+    *,
+    raw_backend: str | None = None,
+    raw_path: Path | None = None,
+    cache_backend: str | None = None,
+    cache_path: Path | None = None,
+) -> None:
+    sections: list[str] = []
+    if raw_backend is not None and raw_path is not None:
+        raw_path_key = "csv_path" if raw_backend == "csv" else "sqlite_path"
+        sections.append(
+            "[raw_exercises]\n"
+            f'backend = "{raw_backend}"\n'
+            f'{raw_path_key} = "{raw_path.name}"\n'
+        )
+
+    if cache_backend is not None and cache_path is not None:
+        sections.append(
+            "[embedded_cache]\n"
+            f'backend = "{cache_backend}"\n'
+            f'path = "{cache_path.name}"\n'
+        )
+
+    sections.append(
+        "[embedding]\n"
+        'provider = "local-deterministic"\n'
+        'model = "fake-hash-v1"\n'
+        'query_prefix = ""\n'
+    )
+    path.write_text("\n".join(sections) + "\n", encoding="utf-8")
 
 
 def make_user_request() -> UserRequest:
@@ -262,7 +316,7 @@ def test_debug_recommendations_main_supports_sentence_transformer_cache_debug_wi
             return [1.0, 0.0, 0.0]
 
     monkeypatch.setattr(
-        module,
+        load_wiring_module(),
         "SentenceTransformerEmbeddingProvider",
         FakeSentenceTransformerEmbeddingProvider,
     )
@@ -345,3 +399,205 @@ def test_debug_recommendations_main_raises_for_incomplete_cache_request_argument
                 "Pull-up",
             ]
         )
+
+
+def test_debug_recommendations_main_supports_jsonl_config_candidate_inspection(
+    tmp_path, capsys
+):
+    module = load_debug_recommendations_module()
+    csv_path = tmp_path / "exercises.csv"
+    cache_path = tmp_path / "embedded_exercises.jsonl"
+    config_path = tmp_path / "debug.toml"
+    write_exercise_csv(
+        csv_path,
+        [
+            {
+                "name": "Pull Up Negative",
+                "description": "A controlled eccentric pull-up variation.",
+                "muscle_groups": "Back;Biceps",
+                "families": "Pull-up",
+                "materials": "Bar",
+                "categories": "Upper Body Pull",
+            },
+            {
+                "name": "Body Row",
+                "description": "A horizontal pulling variation with a bar.",
+                "muscle_groups": "Back;Biceps",
+                "families": "Pull-up",
+                "materials": "Bar",
+                "categories": "Upper Body Pull",
+            },
+            {
+                "name": "Ring Pull Up",
+                "description": "A pulling variation that requires rings.",
+                "muscle_groups": "Back;Biceps",
+                "families": "Pull-up",
+                "materials": "Rings",
+                "categories": "Upper Body Pull",
+            },
+        ],
+    )
+    build_cache(csv_path, cache_path)
+    write_debug_config(
+        config_path,
+        cache_backend="jsonl",
+        cache_path=cache_path,
+    )
+
+    exit_code = module.main(
+        [
+            "--config",
+            str(config_path),
+            *make_user_request_args(),
+            "--limit",
+            "3",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "=== TOP CANDIDATES ===" in output
+    assert "Pull Up Negative" in output
+    assert "Ring Pull Up" not in output
+
+
+def test_debug_recommendations_main_supports_sqlite_config_candidate_inspection(
+    tmp_path, capsys
+):
+    module = load_debug_recommendations_module()
+    cache_path = tmp_path / "embedded_exercises.sqlite"
+    config_path = tmp_path / "debug.toml"
+    build_sqlite_cache(
+        cache_path,
+        [
+            make_embedded_exercise(
+                name="Pull Up Negative",
+                description="A controlled eccentric pull-up variation.",
+                families=["Pull-up"],
+                materials=["Bar"],
+                categories=["Upper Body Pull"],
+                embedding=[1.0, 0.0, 0.0, 0.0],
+            ),
+            make_embedded_exercise(
+                name="Body Row",
+                description="A horizontal pulling variation with a bar.",
+                families=["Pull-up"],
+                materials=["Bar"],
+                categories=["Upper Body Pull"],
+                embedding=[0.8, 0.2, 0.0, 0.0],
+            ),
+            make_embedded_exercise(
+                name="Ring Pull Up",
+                description="A pulling variation that requires rings.",
+                families=["Pull-up"],
+                materials=["Rings"],
+                categories=["Upper Body Pull"],
+                embedding=[1.0, 0.0, 0.0, 0.0],
+            ),
+        ],
+    )
+    write_debug_config(
+        config_path,
+        cache_backend="sqlite",
+        cache_path=cache_path,
+    )
+
+    exit_code = module.main(
+        [
+            "--config",
+            str(config_path),
+            *make_user_request_args(),
+            "--limit",
+            "2",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "Pull Up Negative" in output
+    assert "Body Row" in output
+    assert "Ring Pull Up" not in output
+
+
+def test_debug_recommendations_main_uses_configured_raw_csv_for_exercise_texts(
+    tmp_path, capsys
+):
+    module = load_debug_recommendations_module()
+    csv_path = tmp_path / "exercises.csv"
+    config_path = tmp_path / "debug.toml"
+    exercise = Exercise(
+        name="Pull Up",
+        description="A strict vertical pulling movement on a bar.",
+        muscle_groups=["Back", "Biceps"],
+        families=["Pull-up"],
+        materials=["Bar"],
+        categories=["Upper Body Pull"],
+    )
+    write_exercise_csv(
+        csv_path,
+        [
+            {
+                "name": exercise.name,
+                "description": exercise.description,
+                "muscle_groups": "Back;Biceps",
+                "families": "Pull-up",
+                "materials": "Bar",
+                "categories": "Upper Body Pull",
+            }
+        ],
+    )
+    write_debug_config(
+        config_path,
+        raw_backend="csv",
+        raw_path=csv_path,
+    )
+
+    exit_code = module.main(
+        [
+            "--config",
+            str(config_path),
+            "--exercise-name",
+            "Pull Up",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "--- Pull Up ---" in output
+    assert build_exercise_text(exercise) in output
+
+
+def test_debug_recommendations_main_uses_configured_raw_sqlite_for_exercise_texts(
+    tmp_path, capsys
+):
+    module = load_debug_recommendations_module()
+    sqlite_path = tmp_path / "exercises.sqlite"
+    config_path = tmp_path / "debug.toml"
+    exercise = Exercise(
+        name="Pull Up",
+        description="A strict vertical pulling movement on a bar.",
+        muscle_groups=["Back", "Biceps"],
+        families=["Pull-up"],
+        materials=["Bar"],
+        categories=["Upper Body Pull"],
+    )
+    write_exercises_to_sqlite(sqlite_path=sqlite_path, exercises=[exercise])
+    write_debug_config(
+        config_path,
+        raw_backend="sqlite",
+        raw_path=sqlite_path,
+    )
+
+    exit_code = module.main(
+        [
+            "--config",
+            str(config_path),
+            "--exercise-name",
+            "Pull Up",
+        ]
+    )
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "--- Pull Up ---" in output
+    assert build_exercise_text(exercise) in output

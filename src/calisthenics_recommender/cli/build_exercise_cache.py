@@ -4,29 +4,30 @@ import argparse
 from pathlib import Path
 from typing import Sequence
 
-from calisthenics_recommender.adapters.csv_exercise_repository import (
-    CsvExerciseRepository,
-)
-from calisthenics_recommender.adapters.local_deterministic_embedding_provider import (
-    LocalDeterministicEmbeddingProvider,
-)
-from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
-    EmbeddedExerciseCacheMetadata,
-    LocalEmbeddedExerciseCache,
-)
-from calisthenics_recommender.adapters.sqlite_exercise_repository import (
-    SQLiteExerciseRepository,
-)
-from calisthenics_recommender.adapters.sentence_transformer_embedding_provider import (
-    SentenceTransformerEmbeddingProvider,
-)
 from calisthenics_recommender.application.embedded_exercise_cache_workflow import (
     build_embedded_exercise_cache,
 )
-from calisthenics_recommender.ports.exercise_repository import ExerciseRepository
+from calisthenics_recommender.config import (
+    EmbeddedCacheConfig,
+    EmbeddingConfig,
+    RawExercisesConfig,
+    RecommenderConfig,
+    load_recommender_config,
+)
+from calisthenics_recommender.wiring import (
+    build_cache_embedding_provider_and_metadata,
+    build_embedded_exercise_cache_writer,
+    build_exercise_repository,
+)
 
 
-def build_argument_parser() -> argparse.ArgumentParser:
+def build_argument_parser(
+    config: RecommenderConfig | None = None,
+) -> argparse.ArgumentParser:
+    raw_exercises_config = None if config is None else config.raw_exercises
+    embedded_cache_config = None if config is None else config.embedded_cache
+    embedding_config = None if config is None else config.embedding
+
     parser = argparse.ArgumentParser(
         description=(
             "Build a local embedded exercise cache from a CSV file or SQLite "
@@ -34,27 +35,63 @@ def build_argument_parser() -> argparse.ArgumentParser:
             "sentence-transformer model."
         )
     )
-    input_group = parser.add_mutually_exclusive_group(required=True)
+    parser.add_argument("--config", type=Path)
+    input_group = parser.add_mutually_exclusive_group(
+        required=raw_exercises_config is None
+    )
     input_group.add_argument("--input-csv", type=Path)
     input_group.add_argument("--input-db", type=Path)
-    parser.add_argument("--output-cache", required=True, type=Path)
+    parser.add_argument(
+        "--output-cache",
+        required=embedded_cache_config is None,
+        type=Path,
+        default=(
+            None if embedded_cache_config is None else embedded_cache_config.path
+        ),
+    )
     parser.add_argument(
         "--embedding-provider",
         choices=("local-deterministic", "sentence-transformer"),
-        default="local-deterministic",
+        default=_default_embedding_provider(embedding_config),
     )
-    parser.add_argument("--embedding-model")
-    parser.add_argument("--embedding-dimension", type=int)
-    parser.add_argument("--text-prefix", default="")
-    parser.add_argument("--text-builder-version", required=True)
+    parser.add_argument(
+        "--embedding-model",
+        default=None if embedding_config is None else embedding_config.model,
+    )
+    parser.add_argument(
+        "--embedding-dimension",
+        type=int,
+        default=None if embedding_config is None else embedding_config.dimension,
+    )
+    parser.add_argument(
+        "--text-prefix",
+        default="" if embedding_config is None else embedding_config.text_prefix,
+    )
+    parser.add_argument(
+        "--text-builder-version",
+        default=(
+            None
+            if embedding_config is None
+            else embedding_config.text_builder_version
+        ),
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_argument_parser().parse_args(list(argv) if argv is not None else None)
-    embedding_provider, metadata = _build_embedding_provider_and_metadata(args)
-    exercise_repository = _build_exercise_repository(args)
-    cache_writer = LocalEmbeddedExerciseCache(args.output_cache)
+    argv_list = list(argv) if argv is not None else None
+    config = _load_optional_config(argv_list)
+    args = build_argument_parser(config).parse_args(argv_list)
+
+    raw_exercises_config = _resolve_raw_exercises_config(args, config)
+    embedded_cache_config = _resolve_embedded_cache_config(args, config)
+    embedding_config = _resolve_embedding_config(args, config)
+
+    embedding_provider, metadata = build_cache_embedding_provider_and_metadata(
+        embedding_config
+    )
+    exercise_repository = build_exercise_repository(raw_exercises_config)
+    cache_writer = build_embedded_exercise_cache_writer(embedded_cache_config)
 
     build_embedded_exercise_cache(
         exercise_repository=exercise_repository,
@@ -65,51 +102,71 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _build_exercise_repository(args: argparse.Namespace) -> ExerciseRepository:
-    if args.input_db is not None:
-        return SQLiteExerciseRepository(args.input_db)
-
-    if args.input_csv is not None:
-        return CsvExerciseRepository(args.input_csv)
-
-    raise ValueError("Exactly one raw exercise input source is required")
+def _default_embedding_provider(embedding_config: EmbeddingConfig | None) -> str:
+    if embedding_config is None:
+        return "local-deterministic"
+    return embedding_config.provider
 
 
-def _build_embedding_provider_and_metadata(
+def _load_optional_config(argv: Sequence[str] | None) -> RecommenderConfig | None:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--config", type=Path)
+    args, _ = parser.parse_known_args(argv)
+    if args.config is None:
+        return None
+    return load_recommender_config(args.config)
+
+
+def _resolve_raw_exercises_config(
     args: argparse.Namespace,
-) -> tuple[object, EmbeddedExerciseCacheMetadata]:
-    if args.embedding_provider == "sentence-transformer":
-        model_name = (
-            args.embedding_model
-            or SentenceTransformerEmbeddingProvider.DEFAULT_MODEL_NAME
-        )
-        embedding_provider = SentenceTransformerEmbeddingProvider(
-            model_name=model_name,
-            text_prefix=args.text_prefix,
-        )
-        metadata = EmbeddedExerciseCacheMetadata(
-            embedding_model=model_name,
-            embedding_dimension=embedding_provider.get_embedding_dimension(),
-            text_builder_version=args.text_builder_version,
-        )
-        return embedding_provider, metadata
+    config: RecommenderConfig | None,
+) -> RawExercisesConfig:
+    if args.input_db is not None:
+        return RawExercisesConfig(backend="sqlite", path=args.input_db)
+    if args.input_csv is not None:
+        return RawExercisesConfig(backend="csv", path=args.input_csv)
+    if config is None or config.raw_exercises is None:
+        raise ValueError("Exactly one raw exercise input source is required")
+    return config.raw_exercises
 
-    if args.embedding_model is None:
-        raise ValueError("--embedding-model is required for local-deterministic mode")
-    if args.embedding_dimension is None:
-        raise ValueError(
-            "--embedding-dimension is required for local-deterministic mode"
-        )
 
-    metadata = EmbeddedExerciseCacheMetadata(
-        embedding_model=args.embedding_model,
-        embedding_dimension=args.embedding_dimension,
-        text_builder_version=args.text_builder_version,
+def _resolve_embedded_cache_config(
+    args: argparse.Namespace,
+    config: RecommenderConfig | None,
+) -> EmbeddedCacheConfig:
+    if args.output_cache is None:
+        raise ValueError("--output-cache is required")
+
+    backend = "jsonl"
+    if config is not None and config.embedded_cache is not None:
+        backend = config.embedded_cache.backend
+
+    return EmbeddedCacheConfig(
+        backend=backend,
+        path=args.output_cache,
     )
-    embedding_provider = LocalDeterministicEmbeddingProvider(
-        dimension=metadata.embedding_dimension
+
+
+def _resolve_embedding_config(
+    args: argparse.Namespace,
+    config: RecommenderConfig | None,
+) -> EmbeddingConfig:
+    text_builder_version = args.text_builder_version
+    if text_builder_version is None:
+        raise ValueError("--text-builder-version is required")
+
+    return EmbeddingConfig(
+        provider=args.embedding_provider,
+        model=args.embedding_model,
+        dimension=args.embedding_dimension,
+        query_prefix=(
+            ""
+            if config is None or config.embedding is None
+            else config.embedding.query_prefix
+        ),
+        text_prefix=args.text_prefix,
+        text_builder_version=text_builder_version,
     )
-    return embedding_provider, metadata
 
 
 if __name__ == "__main__":
