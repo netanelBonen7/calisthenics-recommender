@@ -4,7 +4,7 @@
 
 This file is the current source of truth for continuing `calisthenics-recommender` with Codex.
 
-v1 is closed. The current codebase is a working local API MVP. Future work should treat v1 as the stable baseline and follow `V2_REFACTOR_PLAN.md` for the next engineering phase.
+The stable v1 baseline is tagged as `v1-local-api-mvp`. The current backend v2 branch is `v2-sqlite-embedded-search-refactor`.
 
 Important rule:
 
@@ -12,22 +12,47 @@ Important rule:
 
 ---
 
-## 2. Current v1 Summary
+## 2. Current Project Summary
 
 The project is a local calisthenics exercise recommender.
 
-v1 uses:
+The current backend v2 branch includes:
 
-- CSV or SQLite for raw exercise input.
-- JSONL for the embedded exercise cache.
+- CSV raw exercise parsing.
+- SQLite raw exercise import/repository.
+- JSONL embedded exercise cache.
+- SQLite embedded exercise cache writer/reader.
 - Offline exercise embedding generation.
 - Runtime query embedding only.
-- Application-layer exact top-K over streamed embedded records.
-- Deterministic equipment filtering before ranking.
+- `EmbeddedExerciseSearchRepository` search port.
+- `EmbeddedExerciseSearchResult`.
+- JSONL exact search adapter.
+- SQLite exact search adapter.
+- `recommend_exercises(...)` uses the search port.
+- Deterministic equipment filtering as part of search/retrieval behavior.
 - FastAPI local runtime via `uvicorn`.
+- TOML config-driven API runtime loaded from `CALISTHENICS_RECOMMENDER_CONFIG_PATH`.
 - CLI commands for import, cache build, demo recommendations, and debugging.
+- Optional `--config` support for `build-exercise-cache`, `demo-recommend`, and `debug-recommendations`.
 
-v1 does not include:
+The API request/response shape is unchanged from v1.
+
+---
+
+## 3. v1 Baseline
+
+`v1-local-api-mvp` is the stable v1 tag.
+
+v1 had:
+
+- CSV raw exercise parsing.
+- SQLite raw exercise import/repository.
+- JSONL embedded exercise cache.
+- App-layer exact top-K search.
+- CLI commands.
+- FastAPI local runtime.
+
+v1 did not include:
 
 - SQLite embedded cache.
 - Search port or search repository.
@@ -38,7 +63,7 @@ v1 does not include:
 
 ---
 
-## 3. v1 User Input
+## 4. User Input
 
 The recommender receives:
 
@@ -72,7 +97,7 @@ Design notes:
 
 ---
 
-## 4. v1 Output
+## 5. Output
 
 Each recommendation returns:
 
@@ -102,12 +127,12 @@ Example:
 Rules:
 
 - Explanations are deterministic and grounded in dataset fields.
-- Do not use an LLM to generate explanations in v1.
+- Do not use an LLM to generate explanations.
 - Do not invent fields that are not in the dataset.
 
 ---
 
-## 5. Dataset Fields
+## 6. Dataset Fields
 
 The raw exercise dataset uses:
 
@@ -126,9 +151,9 @@ The CSV adapter supports real dataset JSON-list fields and simpler semicolon-sty
 
 ---
 
-## 6. Current Pipelines
+## 7. Current Pipelines
 
-### 6.1 Raw Exercise Input
+### 7.1 Raw Exercise Input
 
 ```text
 CSV file
@@ -137,30 +162,26 @@ or SQLite raw exercise DB
 -> Iterable[Exercise]
 ```
 
-SQLite currently stores raw exercises only. It does not store embedded exercise records in v1.
-
-### 6.2 Offline Embedded Cache Build
+### 7.2 Offline Embedded Cache Build
 
 ```text
 ExerciseRepository.iter_exercises()
 -> build_exercise_text(exercise)
 -> EmbeddingProvider.embed(exercise_text)
 -> EmbeddedExercise(exercise, embedding)
--> LocalEmbeddedExerciseCache.write_embedded_exercises(...)
--> JSONL embedded cache
+-> JSONL or SQLite embedded cache writer
 ```
 
 Exercise embeddings are built offline. The cache is derived data.
 
-### 6.3 Runtime Recommendation
+### 7.3 Runtime Recommendation
 
 ```text
 UserRequest
 -> build_query_text(user_request)
 -> EmbeddingProvider.embed(query_text)
--> LocalEmbeddedExerciseRepository.iter_embedded_exercises()
--> application-layer equipment filtering
--> application-layer exact top-K retrieval
+-> EmbeddedExerciseSearchRepository.search(...)
+-> JSONL or SQLite exact search adapter
 -> build deterministic recommendations
 ```
 
@@ -168,9 +189,28 @@ Runtime embeds only the user query. It must not embed all exercises per request.
 
 ---
 
-## 7. Core Architecture Decisions
+## 8. Architecture Boundaries
 
-### 7.1 Raw exercises and embedded records are separate
+### 8.1 Layer Separation
+
+The project keeps a domain/application/ports/adapters/api/cli separation:
+
+```text
+domain/
+application/
+ports/
+adapters/
+api/
+cli/
+```
+
+Keep API and CLI thin. They should parse inputs, load config, call wiring, invoke application use cases, and present output.
+
+Recommendation logic stays in the application layer.
+
+Backend, search, and storage choices live behind ports/adapters/wiring/config.
+
+### 8.2 Raw exercises and embedded records are separate
 
 Raw exercises are source data. Embedded exercise records are derived data.
 
@@ -180,13 +220,14 @@ Current physical storage:
 raw CSV file
 raw SQLite DB
 embedded JSONL cache
+embedded SQLite cache
 ```
 
-Future v2 may add SQLite storage for embedded records, but the logical separation should remain.
+Do not collapse raw exercises and embedded records into one logical concept.
 
-### 7.2 Repository ports are streaming-friendly
+### 8.3 Repository and search ports
 
-Current ports:
+Current ports include:
 
 ```python
 class ExerciseRepository(Protocol):
@@ -196,30 +237,27 @@ class ExerciseRepository(Protocol):
 class EmbeddedExerciseRepository(Protocol):
     def iter_embedded_exercises(self) -> Iterable[EmbeddedExercise]:
         ...
+
+class EmbeddedExerciseSearchRepository(Protocol):
+    ...
 ```
 
-Do not revert these to list-returning methods.
+Do not revert streaming repository ports to list-returning methods.
 
-### 7.3 v1 retrieval is application-layer exact search
+### 8.4 Search mechanics
 
-In v1, `recommend_exercises(...)` builds the query, embeds the query, streams embedded records, filters by equipment, and calls exact top-K retrieval.
+v1 performed exact top-K in the application layer.
 
-This is accurate for v1. v2 should move search mechanics behind a search port.
+Current v2 moves backend-specific search mechanics behind `EmbeddedExerciseSearchRepository` while keeping recommendation policy and explanation building in application logic.
 
-### 7.4 API and CLI layers stay thin
+Existing search adapters:
 
-API and CLI layers wire adapters to application use cases.
+- JSONL exact search adapter.
+- SQLite exact search adapter.
 
-Do not move recommendation logic into:
+Do not add sqlite-vec, pgvector, FAISS, or a vector database unless explicitly requested.
 
-```text
-api/
-cli/
-scripts/
-future UI layers
-```
-
-### 7.5 Tests must stay local and deterministic
+### 8.5 Tests must stay local and deterministic
 
 Automated tests must not:
 
@@ -232,17 +270,18 @@ Use fake, local deterministic, or injected embedding providers in tests.
 
 ---
 
-## 8. Layers And Responsibilities
+## 9. Layers And Responsibilities
 
-### 8.1 Domain
+### 9.1 Domain
 
-Current key files:
+Key files:
 
 ```text
 domain/exercise.py
 domain/user_request.py
 domain/recommendation.py
 domain/embedded_exercise.py
+domain/embedded_exercise_search_result.py
 domain/types.py
 ```
 
@@ -251,9 +290,9 @@ Responsibilities:
 - define and validate core data objects
 - avoid infrastructure details
 
-### 8.2 Application
+### 9.2 Application
 
-Current key files:
+Key files:
 
 ```text
 application/query_builder.py
@@ -271,38 +310,33 @@ Responsibilities:
 
 - build query text
 - build exercise text
-- filter by equipment in v1
-- compute cosine similarity in v1
-- retrieve/rank candidates in v1
 - build deterministic explanations
-- orchestrate recommendation runtime
+- orchestrate recommendation runtime through the search port
 - build embedded exercises from raw exercises
 - orchestrate streaming cache build workflow
 
-v2 should move search mechanics behind a port while keeping recommendation policy and explanation building in application logic.
+### 9.3 Ports
 
-### 8.3 Ports
-
-Current key files:
+Key files:
 
 ```text
 ports/exercise_repository.py
 ports/embedded_exercise_repository.py
+ports/embedded_exercise_search_repository.py
 ports/embedding_provider.py
 ```
 
-There is no search port in v1.
+### 9.4 Adapters
 
-v2 should add a search port such as `EmbeddedExerciseSearchRepository`.
-
-### 8.4 Adapters
-
-Current key files:
+Key files:
 
 ```text
 adapters/csv_exercise_repository.py
 adapters/sqlite_exercise_repository.py
 adapters/local_embedded_exercise_cache.py
+adapters/sqlite_embedded_exercise_cache.py
+adapters/jsonl_embedded_exercise_search_repository.py
+adapters/sqlite_embedded_exercise_search_repository.py
 adapters/local_deterministic_embedding_provider.py
 adapters/fake_embedding_provider.py
 adapters/sentence_transformer_embedding_provider.py
@@ -312,15 +346,15 @@ Responsibilities:
 
 - stream raw exercises from CSV or SQLite
 - write/read local embedded exercise JSONL cache
+- write/read local embedded exercise SQLite cache
+- provide JSONL and SQLite exact search implementations
 - provide fake deterministic embeddings for tests
 - provide local deterministic embeddings for development
 - provide Sentence Transformers embeddings for real local retrieval
 
-There is no SQLite embedded cache adapter in v1.
+### 9.5 API
 
-### 8.5 API
-
-Current key files:
+Key files:
 
 ```text
 api/app.py
@@ -339,26 +373,30 @@ POST /recommend
 Local runtime:
 
 ```powershell
+$env:CALISTHENICS_RECOMMENDER_CONFIG_PATH = ".\runtime.toml"
 uv run uvicorn calisthenics_recommender.api.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Runtime environment variables:
+Runtime config is loaded from:
 
 ```text
-CALISTHENICS_RECOMMENDER_CACHE_PATH
-CALISTHENICS_RECOMMENDER_EMBEDDING_PROVIDER
-CALISTHENICS_RECOMMENDER_EMBEDDING_MODEL
-CALISTHENICS_RECOMMENDER_QUERY_PREFIX
+CALISTHENICS_RECOMMENDER_CONFIG_PATH
 ```
 
-Supported v1 runtime embedding providers:
+The runtime TOML config selects:
+
+- embedded cache backend: JSONL or SQLite
+- cache path
+- embedding provider/model/dimension/prefixes
+
+Supported runtime embedding providers:
 
 ```text
 local-deterministic
 sentence-transformer
 ```
 
-### 8.6 CLI
+### 9.6 CLI
 
 Packaged CLI commands:
 
@@ -369,11 +407,26 @@ demo-recommend
 debug-recommendations
 ```
 
+Commands with optional `--config`:
+
+```text
+build-exercise-cache
+demo-recommend
+debug-recommendations
+```
+
+CLI config can select:
+
+- raw exercise source: CSV or SQLite
+- embedded cache backend: JSONL or SQLite
+- embedding provider/model/dimension/prefixes
+- text builder version for cache building
+
 CLI code should wire adapters and application functions together. It should not contain core recommendation logic.
 
 ---
 
-## 9. Data And Cache Convention
+## 10. Data And Cache Convention
 
 Raw CSV input:
 
@@ -387,7 +440,7 @@ Raw SQLite databases:
 data/db/
 ```
 
-Embedded JSONL caches:
+Embedded JSONL or SQLite caches:
 
 ```text
 data/cache/
@@ -397,9 +450,9 @@ These are local artifacts. Generated data should not be committed.
 
 ---
 
-## 10. Completed v1 Milestones
+## 11. Completed Milestones
 
-Completed milestones:
+Completed v1 milestones:
 
 ```text
 0 - Repository and project setup
@@ -431,26 +484,54 @@ Completed milestones:
 17 - Local API demo with real cache
 ```
 
-v1 is closed after Milestone 17.
+Completed v2 milestones:
+
+```text
+V2.1 - SQLite embedded cache storage
+V2.2 - Embedded search port
+V2.3 - JSONL exact search adapter
+V2.4 - Recommender uses search port
+V2.5 - SQLite exact search adapter
+V2.6A - TOML config for API runtime
+V2.6B - CLI --config support
+```
 
 ---
 
-## 11. v2 Direction
+## 12. Not Implemented
 
-The v2 plan is:
+The current backend v2 branch does not implement:
 
-- SQLite embedded cache.
-- Search port / search repository.
-- JSONL search adapter for backward compatibility.
-- SQLite search adapter.
-- CLI/API wiring to select the new embedded cache/search backend.
-- Docker runtime service after the search/cache refactor.
+- Docker.
+- Cloud deployment.
+- Vector DB, vector extension, sqlite-vec, pgvector, or FAISS.
+- Frontend in the main backend branch.
+- Auth, users, or persisted recommendation history.
+- LLM-generated explanations.
 
-Use `V2_REFACTOR_PLAN.md` as the engineering plan.
+During v2 work, an optional React/Vite demo UI prototype was explored on branch `v2-6c-demo-ui-prototype`. It is optional side work and is not merged into the main backend v2 line.
 
 ---
 
-## 12. Technology Stack
+## 13. Next Direction
+
+The next milestone is `V2.7 - Dockerize FastAPI Runtime`.
+
+Docker should focus only on the backend FastAPI runtime:
+
+- container starts uvicorn
+- container reads `CALISTHENICS_RECOMMENDER_CONFIG_PATH`
+- config/cache files are mounted or copied as runtime artifacts
+- no embedding rebuild on container startup
+- no cloud deployment yet
+- no vector DB yet
+- no frontend serving yet unless explicitly chosen later
+
+After Docker, create a separate `INTERVIEW_PREP.md` in a separate milestone/chat. Do not put detailed interview prep in `V2_REFACTOR_PLAN.md`.
+
+---
+
+## 14. Technology Stack
 
 Current stack:
 
@@ -463,14 +544,14 @@ FastAPI
 uvicorn
 numpy
 sentence-transformers
-standard library csv/json/pathlib/logging/typing/heapq/sqlite3
+standard library csv/json/pathlib/logging/typing/heapq/sqlite3/tomllib
 ```
 
 Do not add dependencies unless explicitly approved.
 
 ---
 
-## 13. Workflow Rules
+## 15. Workflow Rules
 
 When implementing future work:
 
@@ -483,11 +564,11 @@ When implementing future work:
 7. Do not commit unless explicitly told.
 8. Report files changed, verification commands, and tradeoffs.
 
-For this docs-only v1 close-out, do not change source code, tests, or dependencies.
+For docs-only work, do not change source code, tests, or dependencies.
 
 ---
 
-## 14. Anti-Patterns To Avoid
+## 16. Anti-Patterns To Avoid
 
 Avoid:
 
@@ -499,7 +580,8 @@ recommendation logic inside scripts, CLI, API, or UI
 real model downloads in automated tests
 hardcoded absolute paths
 hardcoded API keys
-mixing SQLite embedded cache, search port, Docker, frontend, and cloud in one milestone
-implying SQLite embedded cache exists before v2 implements it
-implying a search port exists before v2 implements it
+mixing Docker, frontend, vector DB, and cloud deployment into the backend refactor
+implying Docker exists before V2.7 implements it
+implying frontend is part of the main backend branch
+recreating PROJECT_ROADMAP_NEXT.md
 ```

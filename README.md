@@ -1,12 +1,12 @@
 # Calisthenics Recommender
 
-Status: v1 closed.
-
 `calisthenics-recommender` is a local, embedding-based calisthenics exercise recommender built as a clean architecture backend project.
 
-The `v1` tag is the stable local API MVP baseline. It can parse a raw exercise dataset, import raw exercises into SQLite, build a local embedded exercise cache, serve recommendations from that cache through CLI commands, and expose the same recommender through FastAPI.
+The stable v1 baseline is tagged as `v1-local-api-mvp`.
 
-The current v2 branch adds SQLite embedded cache support, an embedded search port, JSONL and SQLite search adapters, a config-driven FastAPI runtime, and operator CLI `--config` support. Docker is still future work.
+The current backend v2 branch, `v2-sqlite-embedded-search-refactor`, keeps the same API request/response shape while adding SQLite embedded cache support, an embedded search port, JSONL and SQLite exact search adapters, TOML-driven runtime configuration, and operator CLI `--config` support.
+
+Docker, cloud deployment, vector database integration, and frontend work are not implemented on this main backend branch.
 
 ---
 
@@ -43,30 +43,65 @@ It returns ranked exercise recommendations:
 }
 ```
 
-Recommendation explanations are deterministic and grounded in dataset fields. v1 does not use an LLM to generate explanations.
+Recommendation explanations are deterministic and grounded in dataset fields. The project does not use an LLM to generate explanations.
 
 ---
 
-## v1 Capabilities
+## v1 Baseline
+
+`v1-local-api-mvp` is the stable v1 tag.
+
+v1 includes:
 
 - CSV raw exercise parsing.
 - SQLite raw exercise import and repository.
-- Cache building from CSV or SQLite raw exercise input.
 - JSONL embedded exercise cache.
-- Runtime recommendation from a JSONL embedded cache.
 - Runtime query embedding with local deterministic embeddings or Sentence Transformers.
 - Deterministic equipment filtering.
-- Application-layer exact top-K search over streamed embedded records.
+- Application-layer exact top-K search.
 - CLI commands:
   - `uv run import-exercises-to-sqlite`
   - `uv run build-exercise-cache`
   - `uv run demo-recommend`
   - `uv run debug-recommendations`
-- FastAPI adapter:
+- FastAPI local runtime:
   - `GET /health`
   - `POST /recommend`
-- Local FastAPI runtime through `calisthenics_recommender.api.main:app`.
 - Automated tests using fake, local deterministic, or injected embedding providers.
+
+---
+
+## Current Backend v2 State
+
+The current branch, `v2-sqlite-embedded-search-refactor`, adds:
+
+- SQLite embedded cache writer/reader.
+- `EmbeddedExerciseSearchRepository` search port.
+- `EmbeddedExerciseSearchResult`.
+- JSONL exact search adapter.
+- SQLite exact search adapter.
+- `recommend_exercises(...)` uses the search port.
+- API runtime config through TOML loaded from `CALISTHENICS_RECOMMENDER_CONFIG_PATH`.
+- Optional `--config` support for:
+  - `build-exercise-cache`
+  - `demo-recommend`
+  - `debug-recommendations`
+- Config selection for:
+  - raw exercise source: CSV or SQLite
+  - embedded cache backend: JSONL or SQLite
+  - embedding provider/model/dimension/prefixes
+  - text builder version for cache building
+
+Existing explicit CLI workflows are preserved where practical. The API request/response shape is unchanged.
+
+Not included on this branch:
+
+- No vector DB, sqlite-vec, pgvector, or FAISS.
+- No Docker image yet.
+- No cloud deployment yet.
+- No frontend merged into this backend branch.
+
+During v2 work, an optional React/Vite demo UI prototype was explored on branch `v2-6c-demo-ui-prototype`. It is intentionally separate and is not part of the main backend v2 line.
 
 ---
 
@@ -92,6 +127,7 @@ Pure data models and validation:
 domain/exercise.py
 domain/user_request.py
 domain/embedded_exercise.py
+domain/embedded_exercise_search_result.py
 domain/recommendation.py
 domain/types.py
 ```
@@ -112,7 +148,7 @@ application/embedded_exercise_builder.py
 application/embedded_exercise_cache_workflow.py
 ```
 
-In v1, equipment filtering and exact top-K retrieval happen in this layer.
+The application layer owns recommendation policy, query/text construction, deterministic explanations, and use-case orchestration. In the current v2 branch, backend-specific search mechanics live behind the embedded search port.
 
 ### Ports
 
@@ -121,10 +157,9 @@ Small protocol interfaces:
 ```text
 ports/exercise_repository.py
 ports/embedded_exercise_repository.py
+ports/embedded_exercise_search_repository.py
 ports/embedding_provider.py
 ```
-
-There is no search port in v1. The current v2 branch adds an embedded search port so search mechanics can live behind adapters.
 
 ### Adapters
 
@@ -134,16 +169,17 @@ Concrete infrastructure:
 adapters/csv_exercise_repository.py
 adapters/sqlite_exercise_repository.py
 adapters/local_embedded_exercise_cache.py
+adapters/sqlite_embedded_exercise_cache.py
+adapters/jsonl_embedded_exercise_search_repository.py
+adapters/sqlite_embedded_exercise_search_repository.py
 adapters/local_deterministic_embedding_provider.py
 adapters/fake_embedding_provider.py
 adapters/sentence_transformer_embedding_provider.py
 ```
 
-The embedded cache adapter in v1 is JSONL-backed through `local_embedded_exercise_cache.py`. The current v2 branch also adds SQLite embedded cache support plus JSONL and SQLite search adapters.
-
 ### API And CLI
 
-The API and CLI layers wire adapters to application logic. They should stay thin and should not contain recommendation logic.
+The API and CLI layers wire config, adapters, and application use cases together. They should stay thin and should not contain recommendation logic.
 
 ---
 
@@ -157,8 +193,7 @@ CSV or SQLite raw exercises
 -> build_exercise_text(...)
 -> EmbeddingProvider.embed(...)
 -> EmbeddedExercise
--> LocalEmbeddedExerciseCache
--> JSONL embedded cache
+-> JSONL or SQLite embedded cache writer
 ```
 
 ### Runtime Recommendation
@@ -167,16 +202,12 @@ CSV or SQLite raw exercises
 UserRequest
 -> build_query_text(...)
 -> EmbeddingProvider.embed(query)
--> LocalEmbeddedExerciseRepository
--> stream embedded exercises from JSONL
--> application-layer equipment filtering
--> application-layer exact top-K retrieval
+-> EmbeddedExerciseSearchRepository
+-> JSONL or SQLite exact search adapter
 -> deterministic recommendation response
 ```
 
 Runtime embeds only the user query. It does not re-embed every exercise per request.
-
-That flow describes the v1 baseline. On the current v2 branch, top-K retrieval sits behind the embedded search port, with JSONL and SQLite search adapters providing the backend-specific search behavior.
 
 ---
 
@@ -188,34 +219,25 @@ Raw CSV input should live under:
 data/raw/
 ```
 
-Example:
-
-```text
-data/raw/calisthenics_exercises.csv
-```
-
 Imported raw SQLite databases should live under:
 
 ```text
 data/db/
 ```
 
-Example:
-
-```text
-data/db/calisthenics_exercises.sqlite
-```
-
-Embedded JSONL caches should live under:
+Embedded JSONL or SQLite caches should live under:
 
 ```text
 data/cache/
 ```
 
-Example:
+Examples:
 
 ```text
+data/raw/calisthenics_exercises.csv
+data/db/calisthenics_exercises.sqlite
 data/cache/calisthenics_qwen_cache.jsonl
+data/cache/calisthenics_qwen_cache.sqlite
 ```
 
 The raw dataset, generated SQLite databases, and generated embedded caches are local artifacts and are intentionally not part of the repository.
@@ -262,7 +284,7 @@ First use may download model files through Sentence Transformers. No OpenAI API 
 
 ### Import CSV Exercises To SQLite
 
-This imports raw exercises into a local SQLite database. It does not store embeddings in SQLite.
+This imports raw exercises into a local SQLite database. It does not store embeddings in the raw exercise database.
 
 ```powershell
 uv run import-exercises-to-sqlite `
@@ -270,9 +292,7 @@ uv run import-exercises-to-sqlite `
   --output-db .\data\db\calisthenics_exercises.sqlite
 ```
 
-### Build A Development JSONL Cache
-
-This uses local deterministic embeddings and is useful for development.
+### Build A JSONL Cache With Explicit Flags
 
 ```powershell
 uv run build-exercise-cache `
@@ -284,9 +304,9 @@ uv run build-exercise-cache `
   --text-builder-version v1
 ```
 
-### Build A Real Qwen JSONL Cache
+### Build A Real Qwen JSONL Cache With Explicit Flags
 
-This uses Sentence Transformers and the Qwen embedding model. The example reads raw exercises from SQLite and writes embedded records to JSONL.
+This example reads raw exercises from SQLite and writes embedded records to JSONL.
 
 ```powershell
 uv run build-exercise-cache `
@@ -297,35 +317,72 @@ uv run build-exercise-cache `
   --text-builder-version v1
 ```
 
-### Shared Runtime And CLI Config
+### Shared TOML Config
 
-`build-exercise-cache`, `demo-recommend`, and `debug-recommendations` also support `--config` for operator-facing backend and embedding settings.
+`build-exercise-cache`, `demo-recommend`, `debug-recommendations`, and the FastAPI runtime can use TOML config for backend and embedding settings.
 
 ```toml
 [raw_exercises]
 backend = "sqlite"
-csv_path = "data/raw/calisthenics_exercises.csv"
 sqlite_path = "data/db/calisthenics_exercises.sqlite"
 
 [embedded_cache]
 backend = "sqlite"
-path = "data/cache/calisthenics_embeddings.sqlite"
+path = "data/cache/calisthenics_qwen_cache.sqlite"
 
 [embedding]
 provider = "sentence-transformer"
 model = "Qwen/Qwen3-Embedding-0.6B"
-dimension = 4
 query_prefix = ""
 text_prefix = ""
 text_builder_version = "v1"
 ```
 
-Explicit CLI flags still win over matching config values.
+For CSV raw input, use `backend = "csv"` with `csv_path`. For JSONL embedded cache, use `backend = "jsonl"` with a `.jsonl` cache path.
 
-Build a cache from config:
+Config paths are resolved relative to the TOML file. Explicit CLI flags still win over matching config values where those workflows are supported.
+
+### Build A Cache With Config
 
 ```powershell
 uv run build-exercise-cache --config .\runtime.toml
+```
+
+### Run CLI Recommendation Demo With Config
+
+```powershell
+uv run demo-recommend `
+  --config .\runtime.toml `
+  --target-family "Pull-up" `
+  --goal "I want to build pulling strength and improve my strict pull-ups." `
+  --current-level "I can do a few strict pull-ups but my last reps are slow." `
+  --available-equipment "Bar" `
+  --limit 5
+```
+
+Repeat `--available-equipment` to pass multiple equipment options.
+
+### Run Debug Tooling With Config
+
+Inspect query text and selected exercise texts:
+
+```powershell
+uv run debug-recommendations `
+  --config .\runtime.toml `
+  --exercise-name "Pull Up" `
+  --exercise-name "Row"
+```
+
+Inspect top retrieval candidates:
+
+```powershell
+uv run debug-recommendations `
+  --config .\runtime.toml `
+  --target-family "Pull-up" `
+  --goal "I want to build pulling strength and improve my strict pull-ups." `
+  --current-level "I can do a few strict pull-ups but my last reps are slow." `
+  --available-equipment "Bar" `
+  --limit 10
 ```
 
 ### Run FastAPI Locally
@@ -333,18 +390,6 @@ uv run build-exercise-cache --config .\runtime.toml
 Use a runtime TOML config file and point the API to it with `CALISTHENICS_RECOMMENDER_CONFIG_PATH`.
 
 ```powershell
-$config = @"
-[embedded_cache]
-backend = "jsonl"
-path = "data/cache/calisthenics_qwen_cache.jsonl"
-
-[embedding]
-provider = "sentence-transformer"
-model = "Qwen/Qwen3-Embedding-0.6B"
-query_prefix = ""
-"@
-
-$config | Set-Content -Path .\runtime.toml
 $env:CALISTHENICS_RECOMMENDER_CONFIG_PATH = ".\runtime.toml"
 
 uv run uvicorn calisthenics_recommender.api.main:app --reload --host 127.0.0.1 --port 8000
@@ -374,93 +419,15 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-### Run CLI Recommendation Demo
-
-```powershell
-uv run demo-recommend `
-  --config .\runtime.toml `
-  --target-family "Pull-up" `
-  --goal "I want to build pulling strength and improve my strict pull-ups." `
-  --current-level "I can do a few strict pull-ups but my last reps are slow." `
-  --available-equipment "Bar" `
-  --limit 5
-```
-
-The explicit-flag workflow still works too:
-
-```powershell
-uv run demo-recommend `
-  --cache-path .\data\cache\calisthenics_qwen_cache.jsonl `
-  --embedding-provider sentence-transformer `
-  --embedding-model "Qwen/Qwen3-Embedding-0.6B" `
-  --target-family "Pull-up" `
-  --goal "I want to build pulling strength and improve my strict pull-ups." `
-  --current-level "I can do a few strict pull-ups but my last reps are slow." `
-  --available-equipment "Bar" `
-  --limit 5
-```
-
-Repeat `--available-equipment` to pass multiple equipment options.
-
-### Run Debug Tooling
-
-Inspect query text and selected exercise texts:
-
-```powershell
-uv run debug-recommendations `
-  --config .\runtime.toml `
-  --exercise-name "Pull Up" `
-  --exercise-name "Row"
-```
-
-Inspect query text and selected exercise texts with explicit flags:
-
-```powershell
-uv run debug-recommendations `
-  --input-csv .\data\raw\calisthenics_exercises.csv `
-  --exercise-name "Pull Up" `
-  --exercise-name "Row" `
-  --target-family "Pull-up" `
-  --goal "I want to build pulling strength and improve my strict pull-ups." `
-  --current-level "I can do a few strict pull-ups but my last reps are slow." `
-  --available-equipment "Bar"
-```
-
-Inspect top retrieval candidates from a JSONL embedded cache:
-
-```powershell
-uv run debug-recommendations `
-  --config .\runtime.toml `
-  --target-family "Pull-up" `
-  --goal "I want to build pulling strength and improve my strict pull-ups." `
-  --current-level "I can do a few strict pull-ups but my last reps are slow." `
-  --available-equipment "Bar" `
-  --limit 10
-```
-
-The explicit-flag workflow still works here too:
-
-```powershell
-uv run debug-recommendations `
-  --cache-path .\data\cache\calisthenics_qwen_cache.jsonl `
-  --embedding-provider sentence-transformer `
-  --embedding-model "Qwen/Qwen3-Embedding-0.6B" `
-  --target-family "Pull-up" `
-  --goal "I want to build pulling strength and improve my strict pull-ups." `
-  --current-level "I can do a few strict pull-ups but my last reps are slow." `
-  --available-equipment "Bar" `
-  --limit 10
-```
-
 ---
 
 ## Current Limitations
 
 - No vector database, vector extension, or approximate nearest neighbor index yet.
 - No Docker image yet.
-- No frontend yet.
+- No frontend merged into the main backend branch.
 - No cloud deployment yet.
-- CLI config support is not implemented yet.
+- No auth, users, or persisted recommendation history.
 - Recommendation quality has not been fully tuned.
 - `target_family` influences semantic retrieval and explanations, but it is not a deterministic hard filter or boost.
 - Difficulty/progression filtering is not implemented.
@@ -468,19 +435,10 @@ uv run debug-recommendations `
 
 ---
 
-## v2 Direction
+## Next Direction
 
-The current v2 branch already adds:
+The next backend milestone is Dockerizing the FastAPI runtime service. Docker should package and run the API runtime only, read `CALISTHENICS_RECOMMENDER_CONFIG_PATH`, and treat config/cache files as runtime artifacts.
 
-- SQLite embedded cache storage
-- an embedded search port
-- a JSONL exact search adapter
-- a SQLite exact search adapter
-- config-driven FastAPI runtime wiring
-
-Still planned next:
-
-- CLI config support
-- Dockerized FastAPI runtime service
+Do not treat Docker, cloud deployment, vector database integration, or frontend serving as implemented on this branch.
 
 The detailed engineering plan is in `V2_REFACTOR_PLAN.md`.

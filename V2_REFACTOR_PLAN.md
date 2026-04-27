@@ -4,37 +4,62 @@
 
 Refactor v1 so embedded cache storage can move from JSONL to SQLite and vector-search mechanics move behind a search port.
 
-v1 is a working local API MVP. v2 should preserve the current user-visible behavior while changing where embedded records are stored and where search mechanics live.
+The stable v1 baseline is tagged as `v1-local-api-mvp`. The current backend v2 branch is `v2-sqlite-embedded-search-refactor`.
+
+v2 preserves the current user-visible API behavior while changing where embedded records are stored and where search mechanics live.
 
 ---
 
-## Current v1
+## v1 Baseline
 
-- JSONL embedded cache.
-- Application-layer exact top-K over streamed embedded records.
-- Equipment filtering happens in the application recommendation flow.
-- FastAPI runtime works locally.
-- Raw exercises can come from CSV or SQLite.
-- Runtime embeds only the user query.
-- Exercise embeddings are built offline.
+`v1-local-api-mvp` had:
+
+- CSV raw exercise parsing.
+- SQLite raw exercise import/repository.
+- JSONL embedded exercise cache.
+- App-layer exact top-K search.
+- CLI commands.
+- FastAPI local runtime.
 
 ---
 
-## Target v2
+## Current Backend v2 State
 
-- SQLite embedded cache.
-- Embedded search port.
-- Recommender asks for top-K candidates instead of scanning/ranking embedded records directly.
-- JSONL exact search adapter preserves backward compatibility.
-- SQLite search adapter performs exact search internally first.
-- Future adapters can use sqlite-vec, pgvector, FAISS, or a vector database.
-- Dockerize the FastAPI runtime service after the search/cache refactor.
+The current branch includes:
+
+- SQLite embedded cache writer/reader.
+- `EmbeddedExerciseSearchRepository` search port.
+- `EmbeddedExerciseSearchResult`.
+- JSONL exact search adapter.
+- SQLite exact search adapter.
+- `recommend_exercises(...)` uses the search port.
+- API runtime is config-driven through TOML loaded from `CALISTHENICS_RECOMMENDER_CONFIG_PATH`.
+- CLI commands support optional `--config`:
+  - `build-exercise-cache`
+  - `demo-recommend`
+  - `debug-recommendations`
+- Config can select:
+  - raw exercise source: CSV or SQLite
+  - embedded cache backend: JSONL or SQLite
+  - embedding provider/model/dimension/prefixes
+  - text builder version for cache building
+
+Existing explicit CLI workflows are preserved where practical. The API request/response shape is unchanged.
+
+Not included:
+
+- No vector DB, sqlite-vec, pgvector, or FAISS.
+- No Docker yet.
+- No cloud deployment yet.
+- No frontend merged into this backend branch.
+
+During v2 work, an optional React/Vite demo UI prototype was explored on branch `v2-6c-demo-ui-prototype`. It is intentionally separate and should not be treated as part of the main backend v2 line.
 
 ---
 
 ## Why This Refactor Is Useful
 
-v1 proves the local recommendation flow works, but the recommender currently owns too much of the search process:
+v1 proved the local recommendation flow works, but the recommender owned too much of the search process:
 
 ```text
 recommend_exercises
@@ -44,9 +69,9 @@ recommend_exercises
 -> keep exact top-K
 ```
 
-That is fine for a JSONL MVP, but it makes future storage and search backends harder to add.
+That was fine for a JSONL MVP, but it made future storage and search backends harder to add.
 
-v2 should move search responsibility behind a search adapter/search repository:
+v2 moves search responsibility behind a search adapter/search repository:
 
 ```text
 recommend_exercises
@@ -60,121 +85,142 @@ This keeps recommendation policy in the application layer while allowing differe
 
 ---
 
-## V2.1 - SQLite Embedded Cache Storage
+## Completed V2 Milestones
 
-Goal:
+### V2.1 - SQLite Embedded Cache Storage
 
-Add SQLite-backed embedded cache writer/reader equivalent to the current JSONL embedded cache.
+Status: completed.
 
-Scope:
+Added SQLite-backed embedded cache writer/reader equivalent to the JSONL embedded cache.
 
-- Add SQLite schema for embedded exercises and embedding metadata.
-- Store embedded exercise records and vectors in SQLite.
-- Store vectors as JSON or another simple representation for now.
-- Keep raw exercises and embedded records logically separate.
-- Prove JSONL and SQLite embedded caches round-trip equivalent records.
-- No recommender behavior change yet.
-- No vector database or SQLite vector extension yet.
+Completed scope:
 
----
+- Added SQLite storage for embedded exercise records and embedding metadata.
+- Kept raw exercises and embedded records logically separate.
+- Proved JSONL and SQLite embedded caches round-trip equivalent records.
+- Did not add vector database or SQLite vector extension.
 
-## V2.2 - Embedded Search Port
+### V2.2 - Embedded Search Port
 
-Goal:
+Status: completed.
 
-Introduce a search abstraction for top-K embedded candidate retrieval.
+Introduced the search abstraction for top-K embedded candidate retrieval.
 
-Scope:
+Completed scope:
 
-- Add a port such as `EmbeddedExerciseSearchRepository`.
-- Add a result object containing exercise plus match score / similarity score.
-- Preserve existing behavior.
-- Do not add sqlite-vec, pgvector, FAISS, or a vector DB yet.
+- Added `EmbeddedExerciseSearchRepository`.
+- Added `EmbeddedExerciseSearchResult`.
+- Preserved user-visible recommendation behavior.
+- Did not add sqlite-vec, pgvector, FAISS, or a vector DB.
 
----
+### V2.3 - JSONL Exact Search Adapter
 
-## V2.3 - JSONL Exact Search Adapter
+Status: completed.
 
-Goal:
+Kept backward compatibility by moving JSONL scan/filter/similarity/top-K behavior behind the search port.
 
-Keep backward compatibility by moving current JSONL scan/filter/similarity/top-K behavior behind the new search port.
-
-Scope:
+Completed scope:
 
 - JSONL adapter streams embedded records.
 - Applies hard filters such as equipment in Python.
 - Computes exact similarity in Python.
 - Keeps top-K internally.
-- Recommender no longer owns those mechanics directly.
+- Recommender no longer owns those backend-specific mechanics directly.
 
----
+### V2.4 - Recommender Uses Search Port
 
-## V2.4 - Recommender Uses Search Port
+Status: completed.
 
-Goal:
+Refactored `recommend_exercises(...)` so it embeds the query and asks the search port for top-K candidates.
 
-Refactor `recommend_exercises` so it embeds the query and asks the search port for top-K candidates.
-
-Scope:
+Completed scope:
 
 - Query building and query embedding remain in the recommendation flow.
-- Search mechanics move behind adapters.
-- Recommendation/explanation building stays in application logic.
-- Preserve response shape and current behavior.
+- Search mechanics moved behind adapters.
+- Recommendation/explanation building stayed in application logic.
+- Response shape and current behavior were preserved.
 
----
+### V2.5 - SQLite Exact Search Adapter
 
-## V2.5 - SQLite Embedded Search Adapter
+Status: completed.
 
-Goal:
+Implemented a SQLite-backed exact search adapter.
 
-Implement a SQLite-backed search adapter.
+Completed scope:
 
-Scope:
+- Reads embedded records from SQLite.
+- Applies hard filters as early as practical.
+- Computes exact similarity/top-K inside the adapter for now.
+- Keeps future sqlite-vec/pgvector/FAISS adapters possible.
+- Did not add sqlite-vec.
 
-- Read embedded records from SQLite.
-- Apply hard filters as early as practical.
-- Compute exact similarity/top-K inside the adapter for now.
-- Do not add sqlite-vec yet.
-- Keep future sqlite-vec/pgvector/FAISS adapters possible.
+### V2.6A - TOML Config For API Runtime
 
----
+Status: completed.
 
-## V2.6 - CLI/API Wiring For SQLite Embedded Cache
+Added config-driven FastAPI runtime wiring.
 
-Goal:
+Completed scope:
 
-Allow build/runtime commands and API runtime config to use the SQLite embedded cache/search backend.
+- API runtime reads TOML config from `CALISTHENICS_RECOMMENDER_CONFIG_PATH`.
+- Config selects embedded cache backend and path.
+- Config selects embedding provider/model/dimension/prefixes.
+- Runtime uses wiring to build the embedding provider and search repository.
+- API request/response shape stayed unchanged.
 
-Scope:
+### V2.6B - CLI `--config` Support
 
-- Preserve JSONL compatibility if practical.
-- Add backend selection config carefully.
-- Tests use fake/local deterministic embeddings only.
-- Do not run Qwen in automated tests.
+Status: completed.
+
+Added optional operator config support for core CLI workflows.
+
+Completed scope:
+
+- `build-exercise-cache` supports optional `--config`.
+- `demo-recommend` supports optional `--config`.
+- `debug-recommendations` supports optional `--config`.
+- Config can select raw exercise source: CSV or SQLite.
+- Config can select embedded cache backend: JSONL or SQLite.
+- Config can select embedding provider/model/dimension/prefixes.
+- Config can select text builder version for cache building.
+- Existing explicit CLI workflows are preserved where practical.
 
 ---
 
 ## V2.7 - Dockerize FastAPI Runtime
 
+Status: next.
+
 Goal:
 
-Dockerize the FastAPI runtime service.
+Dockerize only the FastAPI runtime service.
 
 Scope:
 
-- Dockerize the API/uvicorn runtime.
+- Add a Docker image for the backend FastAPI runtime.
+- Container starts uvicorn.
+- Container reads `CALISTHENICS_RECOMMENDER_CONFIG_PATH`.
+- Config/cache files are mounted or copied as runtime artifacts.
 - Treat the embedding cache as an input artifact.
 - Do not rebuild exercise embeddings on container startup.
-- Optional future: separate cache-builder worker/container.
+- Do not add cloud deployment yet.
+- Do not add vector DB yet.
+- Do not add frontend serving yet unless explicitly chosen later.
+- Keep Docker focused on the backend runtime.
+
+Out of scope:
+
+- Rebuilding embeddings in the API container at startup.
+- Cache-builder worker/container unless explicitly selected later.
+- Cloud deployment.
+- sqlite-vec, pgvector, FAISS, or vector DB integration.
+- Frontend serving.
 
 ---
 
 ## How JSONL Backward Compatibility Works
 
-JSONL compatibility should work by implementing the new search port with a JSONL exact-scan adapter.
-
-The JSONL adapter can keep using the current JSONL reader:
+JSONL compatibility works through the search port with a JSONL exact-scan adapter.
 
 ```text
 JSONL embedded cache
@@ -185,7 +231,7 @@ JSONL embedded cache
 -> return search results
 ```
 
-This preserves the v1 cache format while allowing `recommend_exercises` to depend on search behavior rather than JSONL repository mechanics.
+This preserves the v1 cache format while allowing `recommend_exercises(...)` to depend on search behavior rather than JSONL repository mechanics.
 
 ---
 
@@ -203,16 +249,16 @@ Product-level recommendation policy and deterministic explanation building shoul
 
 ---
 
-## What Not To Do In v2 Yet
+## What Not To Do Yet
 
-Do not add these until the v2 search/cache refactor is complete:
+Do not add these until explicitly selected in a future milestone:
 
 - sqlite-vec.
 - pgvector.
 - FAISS.
 - Dedicated vector database.
 - Cloud deployment.
-- Frontend.
+- Frontend in the main backend branch.
 - LLM-generated explanations.
 - Large recommendation evaluation framework.
 - Rebuilding embeddings on API startup.
@@ -224,11 +270,16 @@ Do not collapse raw exercises and embedded records into one logical concept. The
 
 ## Later - Interview Prep
 
-After v2 refactor and Docker work are complete, create a separate `INTERVIEW_PREP.md` file covering:
+After Docker, create a separate `INTERVIEW_PREP.md` in a separate milestone/chat.
+
+It should cover:
 
 - demo script
 - architecture explanation
+- what changed from v1 to v2
 - design decisions
 - tradeoffs
 - likely interview questions
 - future cloud path
+
+Do not put detailed interview prep inside `V2_REFACTOR_PLAN.md`.
