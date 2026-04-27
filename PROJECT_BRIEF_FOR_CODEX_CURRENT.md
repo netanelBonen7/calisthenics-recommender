@@ -1,84 +1,53 @@
 # PROJECT_BRIEF_FOR_CODEX_CURRENT.md
 
-## 1. Purpose of this brief
+## 1. Purpose
 
-This file is the current source of truth for continuing the `calisthenics-recommender` project with Codex or a new ChatGPT chat.
+This file is the current source of truth for continuing `calisthenics-recommender` with Codex.
 
-The project has evolved beyond the original milestone plan. The original brief is still useful background, but this file reflects the current architecture after the refactors through Milestone 9C.
+v1 is closed. The current codebase is a working local API MVP. Future work should treat v1 as the stable baseline and follow `V2_REFACTOR_PLAN.md` for the next engineering phase.
 
 Important rule:
 
-> Implement only the milestone explicitly requested. Do not jump ahead.
+> Implement only the explicitly requested task. Do not mix unrelated roadmap items into one change.
 
 ---
 
-## 2. Project overview
+## 2. Current v1 Summary
 
-This project is a **calisthenics exercise recommender**.
+The project is a local calisthenics exercise recommender.
 
-The system recommends exercises from a calisthenics dataset using:
+v1 uses:
 
-- structured user fields for reliability
-- free-text user fields for semantic nuance
-- embeddings for semantic matching
-- deterministic hard filters for practical constraints
-- streaming repositories for future scalability
-- a clean architecture / hexagonal architecture style
+- CSV or SQLite for raw exercise input.
+- JSONL for the embedded exercise cache.
+- Offline exercise embedding generation.
+- Runtime query embedding only.
+- Application-layer exact top-K over streamed embedded records.
+- Deterministic equipment filtering before ranking.
+- FastAPI local runtime via `uvicorn`.
+- CLI commands for import, cache build, demo recommendations, and debugging.
 
-The project is intended to be interview-presentable, with a clear separation between:
+v1 does not include:
 
-- domain models
-- application/use-case logic
-- ports/interfaces
-- infrastructure adapters
-- scripts / user-facing entry points added later
-
----
-
-## 3. Core MVP scope
-
-### 3.1 What the MVP does
-
-The MVP recommends calisthenics exercises based on:
-
-1. the movement/exercise family the user wants to improve
-2. the user's goal in natural language
-3. the user's current level/progression in natural language
-4. the equipment available to the user
-
-The MVP returns a ranked list of recommendations with a score and deterministic explanation.
-
-### 3.2 What the MVP does not do yet
-
-Do not implement these until explicitly requested:
-
-- full workout plans
-- sets/reps prescription
-- injury advice
-- progression-level guarantees
-- difficulty filtering
-- weak-point-specific filtering
-- LLM-generated explanations
-- weighted profile vectors
-- diversity reranking
-- vector database/index
-- frontend
-- Docker
-- Postgres
-- real embedding API integration
-- real dataset quality evaluation
+- SQLite embedded cache.
+- Search port or search repository.
+- Vector database or vector extension.
+- Docker.
+- Frontend.
+- Cloud deployment.
 
 ---
 
-## 4. MVP user input
+## 3. v1 User Input
 
-The MVP receives 4 user input fields:
+The recommender receives:
 
 ```text
 target_family
 goal
 current_level
 available_equipment
+limit
 ```
 
 Example:
@@ -88,20 +57,22 @@ Example:
   "target_family": "Pull-up",
   "goal": "I want to build pulling strength and unlock harder pull-up variations.",
   "current_level": "I can do 5 strict pull-ups, but the last reps are slow.",
-  "available_equipment": ["Bar"]
+  "available_equipment": ["Bar"],
+  "limit": 5
 }
 ```
 
-Design reasoning:
+Design notes:
 
-- `target_family` is structured because it anchors the recommendation.
-- `goal` is free text because embeddings are good for semantic intent.
-- `current_level` is free text because progression descriptions are hard to fit into one rigid field.
-- `available_equipment` is structured because equipment is a hard deterministic filter.
+- `target_family` anchors semantic retrieval.
+- `goal` captures user intent.
+- `current_level` gives semantic progression context.
+- `available_equipment` is a deterministic hard filter.
+- `limit` controls response size and must be positive.
 
 ---
 
-## 5. MVP system output
+## 4. v1 Output
 
 Each recommendation returns:
 
@@ -130,13 +101,13 @@ Example:
 
 Rules:
 
-- `reason` must be deterministic and grounded in actual fields.
-- Do not use an LLM to generate recommendation explanations in the MVP.
+- Explanations are deterministic and grounded in dataset fields.
+- Do not use an LLM to generate explanations in v1.
 - Do not invent fields that are not in the dataset.
 
 ---
 
-## 6. Current dataset fields
+## 5. Dataset Fields
 
 The raw exercise dataset uses:
 
@@ -151,118 +122,71 @@ categories
 
 These become validated `Exercise` objects.
 
+The CSV adapter supports real dataset JSON-list fields and simpler semicolon-style list fields used in tests.
+
 ---
 
-## 7. Current architecture: high-level pipelines
+## 6. Current Pipelines
 
-### 7.1 Raw exercise source pipeline
+### 6.1 Raw Exercise Input
 
 ```text
-CsvExerciseRepository
-or SQLiteExerciseRepository
+CSV file
+or SQLite raw exercise DB
 -> ExerciseRepository.iter_exercises()
 -> Iterable[Exercise]
 ```
 
-The raw exercise source is streaming. It must not require loading all raw exercises into memory.
-CSV remains the original raw input format. SQLite is a local raw-exercise database
-adapter populated from CSV; embeddings remain separate in the JSONL cache.
+SQLite currently stores raw exercises only. It does not store embedded exercise records in v1.
 
-### 7.2 Embedded exercise build pipeline
-
-```text
-Iterable[Exercise]
--> build_exercise_text(exercise)
--> EmbeddingProvider.embed(exercise_text)
--> EmbeddedExercise(exercise, embedding)
-```
-
-This is implemented by:
-
-```text
-build_embedded_exercises(...)
-```
-
-This is for offline/setup/cache-building flows, not request-time recommendation.
-
-### 7.3 Embedded cache build workflow
+### 6.2 Offline Embedded Cache Build
 
 ```text
 ExerciseRepository.iter_exercises()
--> build_embedded_exercises(...)
--> cache_writer.write_embedded_exercises(...)
+-> build_exercise_text(exercise)
+-> EmbeddingProvider.embed(exercise_text)
+-> EmbeddedExercise(exercise, embedding)
+-> LocalEmbeddedExerciseCache.write_embedded_exercises(...)
+-> JSONL embedded cache
 ```
 
-This is implemented by:
+Exercise embeddings are built offline. The cache is derived data.
 
-```text
-build_embedded_exercise_cache(...)
-```
-
-The workflow must stay streaming. It should not materialize all raw exercises or embedded exercises into memory.
-The cache-build CLI may choose CSV or SQLite as the raw exercise input source,
-but the output remains the local JSONL embedded cache.
-
-### 7.4 Local embedded cache pipeline
-
-```text
-LocalEmbeddedExerciseCache
--> writes JSONL cache with metadata
-
-LocalEmbeddedExerciseRepository
--> streams EmbeddedExercise records from JSONL
--> EmbeddedExerciseRepository.iter_embedded_exercises()
-```
-
-The JSONL cache is a derived artifact, not the source of truth.
-
-### 7.5 Runtime recommendation pipeline
+### 6.3 Runtime Recommendation
 
 ```text
 UserRequest
 -> build_query_text(user_request)
 -> EmbeddingProvider.embed(query_text)
-
-EmbeddedExerciseRepository.iter_embedded_exercises()
--> lazy equipment filtering
--> retrieve_top_matches(...)
--> build_recommendations(...)
--> list[Recommendation]
+-> LocalEmbeddedExerciseRepository.iter_embedded_exercises()
+-> application-layer equipment filtering
+-> application-layer exact top-K retrieval
+-> build deterministic recommendations
 ```
 
-Runtime must embed **only the user query**.
-
-Runtime must **not** embed all exercises per request.
+Runtime embeds only the user query. It must not embed all exercises per request.
 
 ---
 
-## 8. Core architecture decisions already made
+## 7. Core Architecture Decisions
 
-### 8.1 Embeddings are precomputed
+### 7.1 Raw exercises and embedded records are separate
 
-Exercise embeddings are built before runtime and stored as derived records.
+Raw exercises are source data. Embedded exercise records are derived data.
 
-Do not re-embed exercises during a recommendation request.
-
-### 8.2 Raw exercises and embeddings are separate logical records
-
-Raw exercise data is source-of-truth data.
-
-Embedding records are derived/versioned data.
-
-Conceptually:
+Current physical storage:
 
 ```text
-exercises
-exercise_embeddings
-embedding_metadata
+raw CSV file
+raw SQLite DB
+embedded JSONL cache
 ```
 
-Even if a future physical database stores them together, the core architecture should continue treating them as separate logical concepts.
+Future v2 may add SQLite storage for embedded records, but the logical separation should remain.
 
-### 8.3 Repositories are streaming-friendly
+### 7.2 Repository ports are streaming-friendly
 
-The current ports are iterator-based:
+Current ports:
 
 ```python
 class ExerciseRepository(Protocol):
@@ -276,67 +200,60 @@ class EmbeddedExerciseRepository(Protocol):
 
 Do not revert these to list-returning methods.
 
-### 8.4 Retrieval uses bounded-memory exact top-K
+### 7.3 v1 retrieval is application-layer exact search
 
-`retrieve_top_matches(...)` consumes `Iterable[EmbeddedExercise]` and uses a heap-based exact top-K approach.
+In v1, `recommend_exercises(...)` builds the query, embeds the query, streams embedded records, filters by equipment, and calls exact top-K retrieval.
 
-The retriever should keep memory roughly `O(limit)`, not `O(number_of_candidates)`.
+This is accurate for v1. v2 should move search mechanics behind a search port.
 
-### 8.5 Future batching/windowing belongs in adapters
+### 7.4 API and CLI layers stay thin
 
-If a future database adapter needs batch/window size, it should be implemented inside that concrete adapter, not in `recommend_exercises`.
+API and CLI layers wire adapters to application use cases.
 
-Examples:
-
-- CSV adapter can stream row by row.
-- JSONL adapter can stream line by line.
-- SQLite/Postgres adapter can fetch rows in configurable batches.
-- Vector DB adapter may eventually use a different search port.
-
-### 8.6 Cache metadata matters
-
-The embedded exercise cache includes metadata such as:
+Do not move recommendation logic into:
 
 ```text
-embedding_model
-embedding_dimension
-text_builder_version
+api/
+cli/
+scripts/
+future UI layers
 ```
 
-The metadata helps detect stale or incompatible cached vectors.
+### 7.5 Tests must stay local and deterministic
+
+Automated tests must not:
+
+- download Qwen
+- call external embedding APIs
+- require external services
+- depend on real generated cache artifacts under `data/`
+
+Use fake, local deterministic, or injected embedding providers in tests.
 
 ---
 
-## 9. Layers and responsibilities
+## 8. Layers And Responsibilities
 
-### 9.1 Domain layer
+### 8.1 Domain
 
-Contains pure data/value objects.
-
-Current key files include:
+Current key files:
 
 ```text
 domain/exercise.py
 domain/user_request.py
 domain/recommendation.py
 domain/embedded_exercise.py
+domain/types.py
 ```
 
 Responsibilities:
 
-- define `Exercise`
-- define `UserRequest`
-- define `Recommendation`
-- define `EmbeddedExercise`
-- validate data using Pydantic where appropriate
+- define and validate core data objects
+- avoid infrastructure details
 
-Domain must not know about CSV, JSONL, SQLite, APIs, embedding SDKs, scripts, or UI.
+### 8.2 Application
 
-### 9.2 Application layer
-
-Contains deterministic business/use-case logic.
-
-Current key files include:
+Current key files:
 
 ```text
 application/query_builder.py
@@ -354,21 +271,19 @@ Responsibilities:
 
 - build query text
 - build exercise text
-- filter by equipment
-- compute cosine similarity
-- retrieve/rank candidates
+- filter by equipment in v1
+- compute cosine similarity in v1
+- retrieve/rank candidates in v1
 - build deterministic explanations
 - orchestrate recommendation runtime
 - build embedded exercises from raw exercises
 - orchestrate streaming cache build workflow
 
-Application layer must not directly read CSV/JSONL files or call real embedding APIs.
+v2 should move search mechanics behind a port while keeping recommendation policy and explanation building in application logic.
 
-### 9.3 Ports layer
+### 8.3 Ports
 
-Defines interfaces/contracts.
-
-Current key files include:
+Current key files:
 
 ```text
 ports/exercise_repository.py
@@ -376,99 +291,115 @@ ports/embedded_exercise_repository.py
 ports/embedding_provider.py
 ```
 
-Responsibilities:
+There is no search port in v1.
 
-- define raw exercise source contract
-- define embedded exercise source contract
-- define embedding provider contract
+v2 should add a search port such as `EmbeddedExerciseSearchRepository`.
 
-Use `typing.Protocol` and keep ports small.
+### 8.4 Adapters
 
-### 9.4 Adapters layer
-
-Connects the core to concrete infrastructure.
-
-Current key files include:
+Current key files:
 
 ```text
 adapters/csv_exercise_repository.py
-adapters/fake_embedding_provider.py
-adapters/local_embedded_exercise_cache.py
 adapters/sqlite_exercise_repository.py
-api/app.py
+adapters/local_embedded_exercise_cache.py
+adapters/local_deterministic_embedding_provider.py
+adapters/fake_embedding_provider.py
+adapters/sentence_transformer_embedding_provider.py
 ```
 
 Responsibilities:
 
-- stream raw exercises from local CSV or SQLite
-- provide fake deterministic embeddings for tests
+- stream raw exercises from CSV or SQLite
 - write/read local embedded exercise JSONL cache
+- provide fake deterministic embeddings for tests
+- provide local deterministic embeddings for development
+- provide Sentence Transformers embeddings for real local retrieval
 
-Adapters are replaceable.
+There is no SQLite embedded cache adapter in v1.
 
-### 9.5 Scripts layer
+### 8.5 API
 
-Contains runnable utilities, not core logic.
-
-Scripts can be added later for:
+Current key files:
 
 ```text
-scripts/build_exercise_cache.py
-scripts/demo_recommend.py
+api/app.py
+api/models.py
+api/runtime.py
+api/main.py
 ```
 
-Scripts should wire adapters and application functions together. They should not contain recommendation logic.
+Endpoints:
+
+```text
+GET /health
+POST /recommend
+```
+
+Local runtime:
+
+```powershell
+uv run uvicorn calisthenics_recommender.api.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Runtime environment variables:
+
+```text
+CALISTHENICS_RECOMMENDER_CACHE_PATH
+CALISTHENICS_RECOMMENDER_EMBEDDING_PROVIDER
+CALISTHENICS_RECOMMENDER_EMBEDDING_MODEL
+CALISTHENICS_RECOMMENDER_QUERY_PREFIX
+```
+
+Supported v1 runtime embedding providers:
+
+```text
+local-deterministic
+sentence-transformer
+```
+
+### 8.6 CLI
+
+Packaged CLI commands:
+
+```text
+import-exercises-to-sqlite
+build-exercise-cache
+demo-recommend
+debug-recommendations
+```
+
+CLI code should wire adapters and application functions together. It should not contain core recommendation logic.
 
 ---
 
-## 10. Current file hierarchy
+## 9. Data And Cache Convention
 
-Current source package shape:
-
-The current package now also includes an `api/` package for the FastAPI adapter.
+Raw CSV input:
 
 ```text
-src/
-- calisthenics_recommender/
-  - domain/
-    - exercise.py
-    - user_request.py
-    - recommendation.py
-    - embedded_exercise.py
-  - application/
-    - query_builder.py
-    - exercise_text_builder.py
-    - filters.py
-    - similarity.py
-    - retriever.py
-    - explanation_builder.py
-    - recommend_exercises.py
-    - embedded_exercise_builder.py
-    - embedded_exercise_cache_workflow.py
-  - ports/
-    - exercise_repository.py
-    - embedded_exercise_repository.py
-    - embedding_provider.py
-  - adapters/
-    - csv_exercise_repository.py
-    - fake_embedding_provider.py
-    - local_embedded_exercise_cache.py
+data/raw/
 ```
 
-Tests mirror the source structure:
+Raw SQLite databases:
 
 ```text
-tests/domain/
-tests/application/
-tests/ports/
-tests/adapters/
+data/db/
 ```
+
+Embedded JSONL caches:
+
+```text
+data/cache/
+```
+
+These are local artifacts. Generated data should not be committed.
 
 ---
 
-## 11. Current completed milestones
+## 10. Completed v1 Milestones
 
-Completed milestones include:
+Completed milestones:
 
 ```text
 0 - Repository and project setup
@@ -499,218 +430,76 @@ Completed milestones include:
 16 - FastAPI backend adapter
 17 - Local API demo with real cache
 ```
----
 
-## 12. Next recommended milestone
-
-Milestone 17 - Local API demo with a real cache is complete.
-
-The next recommended milestone is the optional frontend UI.
-
-### Milestone 18 - Optional Frontend UI
-
-Goal:
-
-Add a simple user-facing frontend on top of the existing local FastAPI backend.
-
-Rules:
-
-- Keep the UI thin.
-- Keep recommendation logic in the backend/core.
-- Reuse the existing `/recommend` API.
-- Do not mix Docker/cloud/vector database work into the same milestone.
-
-Historical reference for the completed milestone:
-
-### Milestone 16 - FastAPI Backend Adapter
-
-Goal:
-
-Expose the existing recommender core through an HTTP API:
-
-```text
-POST /recommend
--> UserRequest
--> existing recommender core
--> JSON response
-```
-
-Rules:
-
-- Add FastAPI as an adapter layer only.
-- Use the existing application logic.
-- Keep recommendation logic out of the endpoint.
-- Use fake/deterministic embeddings in automated tests.
-- Do not call real embedding APIs.
-- Do not run Qwen in automated tests.
-- Do not add frontend/Docker/cloud/vector database work.
----
-
-## 13. Future milestone ideas
-
-After 10A, likely sequence:
-
-```text
-10B - Cache build script/command
-10C - Runtime demo script/CLI
-11 - Real embedding provider adapter
-12 - Real dataset integration and smoke tests
-13 - Recommendation quality/sanity evaluation
-14 - README, architecture docs, polish
-```
-
-These are not fixed. Re-evaluate before each milestone.
+v1 is closed after Milestone 17.
 
 ---
 
-## 14. Technology stack
+## 11. v2 Direction
+
+The v2 plan is:
+
+- SQLite embedded cache.
+- Search port / search repository.
+- JSONL search adapter for backward compatibility.
+- SQLite search adapter.
+- CLI/API wiring to select the new embedded cache/search backend.
+- Docker runtime service after the search/cache refactor.
+
+Use `V2_REFACTOR_PLAN.md` as the engineering plan.
+
+---
+
+## 12. Technology Stack
 
 Current stack:
 
 ```text
-Python 3.12
+Python >=3.11,<3.13
 Pydantic v2
 pytest
 ruff
 FastAPI
 uvicorn
-standard library csv/json/pathlib/logging/typing/heapq
-standard library sqlite3
+numpy
+sentence-transformers
+standard library csv/json/pathlib/logging/typing/heapq/sqlite3
 ```
 
 Do not add dependencies unless explicitly approved.
 
-Postponed dependencies:
-
-```text
-OpenAI/Gemini SDK
-python-dotenv
-pandas
-SQLAlchemy
-FAISS / usearch / pgvector
-Docker
-React / frontend
-```
 ---
 
-## 15. TDD and workflow rules
+## 13. Workflow Rules
 
-The workflow is milestone-based.
+When implementing future work:
 
-When implementing a milestone:
-
-1. Create/use a feature branch.
-2. Add focused tests first.
-3. Run tests and confirm red phase.
-4. Implement minimum production code.
-5. Run full pytest.
-6. Ruff is enforced by pre-commit hook, but Codex can run `uv run ruff check .` for verification.
+1. Inspect the current code before editing.
+2. Add focused tests for behavior changes.
+3. Keep source changes scoped to the requested task.
+4. Run relevant tests.
+5. Run full `uv run pytest` for meaningful code changes.
+6. Run `uv run ruff check .` when Python code changes.
 7. Do not commit unless explicitly told.
-8. Report:
-   - files changed
-   - red phase result
-   - full pytest result
-   - Ruff result
-   - git status
-   - tradeoffs/concerns
+8. Report files changed, verification commands, and tradeoffs.
 
-User prefers to review files before committing.
-
-Usually:
-
-```text
-feature branch
--> commit branch
--> final pytest
--> squash merge into master
-```
+For this docs-only v1 close-out, do not change source code, tests, or dependencies.
 
 ---
 
-## 16. Logging rules
-
-Use logging in real adapters/workflows when useful.
-
-Logging is appropriate for:
-
-- reading/writing CSV/cache files
-- validation failures
-- cache scan start/finish
-- cache write start/finish
-- safe operational counts
-
-Avoid logging:
-
-- full user goal/current_level
-- full query text
-- full exercise text
-- full exercise descriptions
-- raw embedding vectors
-- API keys/secrets
-
-Pure domain models and pure computation functions generally should not log.
-
----
-
-## 17. Testing principles
-
-Use fake embeddings in tests.
-
-Do not call real embedding APIs in unit tests.
-
-Important behavior to test:
-
-- validation
-- deterministic text building
-- equipment filtering
-- cosine similarity
-- exact top-K retrieval
-- streaming behavior
-- no unnecessary materialization
-- cache metadata validation
-- invalid row/cache errors
-- deterministic recommendation output
-- no file/network side effects where a component should be pure
-
-For streaming components, tests should prove:
-
-- one-pass iterables work
-- `len(...)` is not required
-- first valid output can be yielded before later invalid data fails where appropriate
-- data is not materialized into lists unless explicitly needed by the test
-
----
-
-## 18. Important anti-patterns to avoid
+## 14. Anti-Patterns To Avoid
 
 Avoid:
 
 ```text
 embedding all exercises per user request
 returning list[...] from repository ports
-direct CSV/cache access inside recommend_exercises
-recommendation logic inside scripts or CLI
-real embedding API calls in unit tests
+direct CSV/cache/SQLite access inside API or CLI recommendation flows
+recommendation logic inside scripts, CLI, API, or UI
+real model downloads in automated tests
 hardcoded absolute paths
 hardcoded API keys
-mixing data loading, embedding, retrieval, explanation, and UI in one file
-adding FastAPI/Docker before core local pipeline is verified
-letting Codex implement multiple milestones at once
+mixing SQLite embedded cache, search port, Docker, frontend, and cloud in one milestone
+implying SQLite embedded cache exists before v2 implements it
+implying a search port exists before v2 implements it
 ```
-
----
-
-## 19. Current interview-oriented explanation
-
-This project can currently be explained as:
-
-> I built an embedding-based calisthenics exercise recommender using clean architecture. Raw exercises and embedded exercise records are separated. Raw exercises stream from an `ExerciseRepository`; precomputed embeddings stream from an `EmbeddedExerciseRepository`. The runtime recommender embeds only the user query, filters candidate exercises by deterministic equipment constraints, and retrieves exact top-K matches with bounded memory. Exercise embeddings are built offline through a streaming pipeline and stored in a local JSONL cache with metadata, so the storage backend and embedding provider can be replaced later without changing the core recommendation logic.
-
-Testing explanation:
-
-> I used fake deterministic embeddings to test the architecture without external API calls. The tests verify text building, filtering, similarity, top-K retrieval, streaming behavior, cache validation, and full pipeline orchestration.
-
-Storage explanation:
-
-> I treat embeddings as derived/versioned data, not source-of-truth data. The raw exercise dataset remains separate from the embedded exercise cache. The cache has metadata such as embedding model, vector dimension, and text-builder version to prevent silently using incompatible vectors.
-
