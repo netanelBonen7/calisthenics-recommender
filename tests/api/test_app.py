@@ -7,6 +7,9 @@ from fastapi.testclient import TestClient
 from calisthenics_recommender.adapters.fake_embedding_provider import (
     FakeEmbeddingProvider,
 )
+from calisthenics_recommender.adapters.jsonl_embedded_exercise_search_repository import (
+    JsonlEmbeddedExerciseSearchRepository,
+)
 from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
     EmbeddedExerciseCacheMetadata,
     LocalEmbeddedExerciseCache,
@@ -97,7 +100,9 @@ def build_client(tmp_path: Path) -> tuple[TestClient, RecordingFakeEmbeddingProv
         {query_text: [1.0, 0.0, 0.0]}
     )
     app = create_app(
-        embedded_exercise_repository=LocalEmbeddedExerciseRepository(cache_path),
+        embedded_exercise_search_repository=JsonlEmbeddedExerciseSearchRepository(
+            LocalEmbeddedExerciseRepository(cache_path)
+        ),
         embedding_provider=embedding_provider,
     )
     return TestClient(app), embedding_provider

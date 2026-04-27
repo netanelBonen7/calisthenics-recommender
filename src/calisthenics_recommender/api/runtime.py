@@ -7,6 +7,9 @@ from typing import Literal, Mapping
 
 from fastapi import FastAPI
 
+from calisthenics_recommender.adapters.jsonl_embedded_exercise_search_repository import (
+    JsonlEmbeddedExerciseSearchRepository,
+)
 from calisthenics_recommender.adapters.local_deterministic_embedding_provider import (
     LocalDeterministicEmbeddingProvider,
 )
@@ -20,8 +23,8 @@ from calisthenics_recommender.adapters.sentence_transformer_embedding_provider i
 )
 from calisthenics_recommender.api.app import create_app
 from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
-from calisthenics_recommender.ports.embedded_exercise_repository import (
-    EmbeddedExerciseRepository,
+from calisthenics_recommender.ports.embedded_exercise_search_repository import (
+    EmbeddedExerciseSearchRepository,
 )
 
 
@@ -71,21 +74,25 @@ def create_configured_app_from_env(
 ) -> FastAPI:
     config = read_runtime_config_from_env(environ)
     metadata = _read_cache_metadata(config.cache_path)
-    embedded_exercise_repository = _build_embedded_exercise_repository(config)
+    embedded_exercise_search_repository = (
+        _build_embedded_exercise_search_repository(config)
+    )
     embedding_provider = _build_embedding_provider(
         config=config,
         metadata=metadata,
     )
     return create_app(
-        embedded_exercise_repository=embedded_exercise_repository,
+        embedded_exercise_search_repository=embedded_exercise_search_repository,
         embedding_provider=embedding_provider,
     )
 
 
-def _build_embedded_exercise_repository(
+def _build_embedded_exercise_search_repository(
     config: ApiRuntimeConfig,
-) -> EmbeddedExerciseRepository:
-    return LocalEmbeddedExerciseRepository(config.cache_path)
+) -> EmbeddedExerciseSearchRepository:
+    return JsonlEmbeddedExerciseSearchRepository(
+        LocalEmbeddedExerciseRepository(config.cache_path)
+    )
 
 
 def _build_embedding_provider(

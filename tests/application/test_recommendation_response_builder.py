@@ -15,9 +15,11 @@ def get_exercise_model():
     return getattr(module, "Exercise")
 
 
-def get_retrieval_result_model():
-    module = import_module("calisthenics_recommender.application.retriever")
-    return getattr(module, "RetrievalResult")
+def get_embedded_exercise_search_result_model():
+    module = import_module(
+        "calisthenics_recommender.domain.embedded_exercise_search_result"
+    )
+    return getattr(module, "EmbeddedExerciseSearchResult")
 
 
 def get_build_recommendation():
@@ -52,17 +54,17 @@ def exercise_named(name: str, *, families: list[str], categories: list[str], mat
     )
 
 
-def retrieval_result_for(exercise, score: float):
-    RetrievalResult = get_retrieval_result_model()
-    return RetrievalResult(exercise=exercise, score=score)
+def search_result_for(exercise, similarity: float):
+    EmbeddedExerciseSearchResult = get_embedded_exercise_search_result_model()
+    return EmbeddedExerciseSearchResult(exercise=exercise, similarity=similarity)
 
 
-def test_build_recommendation_accepts_user_request_and_retrieval_result():
+def test_build_recommendation_accepts_user_request_and_search_result():
     build_recommendation = get_build_recommendation()
 
     assert list(inspect.signature(build_recommendation).parameters) == [
         "user_request",
-        "retrieval_result",
+        "search_result",
     ]
 
 
@@ -75,9 +77,9 @@ def test_build_recommendation_returns_expected_recommendation_fields():
         categories=["Upper Body Pull", "Skill Work"],
         materials=["Bar", "Rings"],
     )
-    retrieval_result = retrieval_result_for(exercise, 0.87)
+    search_result = search_result_for(exercise, 0.87)
 
-    recommendation = build_recommendation(user_request, retrieval_result)
+    recommendation = build_recommendation(user_request, search_result)
 
     assert recommendation.exercise_name == "Pull Up Negative"
     assert recommendation.match_score == 87
@@ -101,23 +103,19 @@ def test_build_recommendation_converts_similarity_scores_to_deterministic_match_
         materials=["Bar"],
     )
 
-    perfect_match = build_recommendation(
-        user_request, retrieval_result_for(exercise, 1.0)
-    )
-    no_match = build_recommendation(user_request, retrieval_result_for(exercise, 0.0))
-    rounded_match = build_recommendation(
-        user_request, retrieval_result_for(exercise, 0.875)
-    )
+    perfect_match = build_recommendation(user_request, search_result_for(exercise, 1.0))
+    no_match = build_recommendation(user_request, search_result_for(exercise, 0.0))
+    rounded_match = build_recommendation(user_request, search_result_for(exercise, 0.875))
 
     assert perfect_match.match_score == 100
     assert no_match.match_score == 0
     assert rounded_match.match_score == 88
 
 
-def test_build_recommendations_preserves_retrieval_ranking_order():
+def test_build_recommendations_preserves_search_ranking_order():
     build_recommendations = get_build_recommendations()
     user_request = valid_user_request()
-    first = retrieval_result_for(
+    first = search_result_for(
         exercise_named(
             "Pull Up Negative",
             families=["Pull-up"],
@@ -126,7 +124,7 @@ def test_build_recommendations_preserves_retrieval_ranking_order():
         ),
         0.91,
     )
-    second = retrieval_result_for(
+    second = search_result_for(
         exercise_named(
             "Body Row",
             families=["Pull-up"],
@@ -148,8 +146,8 @@ def test_build_recommendations_preserves_retrieval_ranking_order():
 def test_response_construction_does_not_mutate_inputs():
     build_recommendations = get_build_recommendations()
     user_request = valid_user_request()
-    retrieval_results = [
-        retrieval_result_for(
+    search_results = [
+        search_result_for(
             exercise_named(
                 "Pull Up Negative",
                 families=["Pull-up"],
@@ -158,7 +156,7 @@ def test_response_construction_does_not_mutate_inputs():
             ),
             0.91,
         ),
-        retrieval_result_for(
+        search_result_for(
             exercise_named(
                 "Body Row",
                 families=["Pull-up"],
@@ -169,19 +167,19 @@ def test_response_construction_does_not_mutate_inputs():
         ),
     ]
     original_user_request = deepcopy(user_request)
-    original_retrieval_results = deepcopy(retrieval_results)
+    original_search_results = deepcopy(search_results)
 
-    build_recommendations(user_request, retrieval_results)
+    build_recommendations(user_request, search_results)
 
     assert user_request == original_user_request
-    assert retrieval_results == original_retrieval_results
+    assert search_results == original_search_results
 
 
 def test_response_construction_is_pure_and_does_not_touch_files_or_network(monkeypatch):
     build_recommendations = get_build_recommendations()
     user_request = valid_user_request()
-    retrieval_results = [
-        retrieval_result_for(
+    search_results = [
+        search_result_for(
             exercise_named(
                 "Pull Up Negative",
                 families=["Pull-up"],
@@ -201,7 +199,7 @@ def test_response_construction_is_pure_and_does_not_touch_files_or_network(monke
     monkeypatch.setattr(socket, "socket", fail)
     monkeypatch.setattr(socket, "create_connection", fail)
 
-    recommendations = build_recommendations(user_request, retrieval_results)
+    recommendations = build_recommendations(user_request, search_results)
 
     assert [recommendation.exercise_name for recommendation in recommendations] == [
         "Pull Up Negative"

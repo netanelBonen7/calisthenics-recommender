@@ -6,6 +6,9 @@ from calisthenics_recommender.adapters.csv_exercise_repository import (
 from calisthenics_recommender.adapters.fake_embedding_provider import (
     FakeEmbeddingProvider,
 )
+from calisthenics_recommender.adapters.jsonl_embedded_exercise_search_repository import (
+    JsonlEmbeddedExerciseSearchRepository,
+)
 from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
     EmbeddedExerciseCacheMetadata,
     LocalEmbeddedExerciseCache,
@@ -136,7 +139,9 @@ def test_local_fake_cache_pipeline_builds_cache_and_recommends_from_it(tmp_path)
 
     recommendations = recommend_exercises(
         user_request=user_request,
-        embedded_exercise_repository=LocalEmbeddedExerciseRepository(cache_path),
+        embedded_exercise_search_repository=JsonlEmbeddedExerciseSearchRepository(
+            LocalEmbeddedExerciseRepository(cache_path)
+        ),
         embedding_provider=embedding_provider,
         limit=3,
     )

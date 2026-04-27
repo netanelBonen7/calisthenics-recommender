@@ -7,6 +7,9 @@ from typing import Sequence
 from calisthenics_recommender.adapters.local_deterministic_embedding_provider import (
     LocalDeterministicEmbeddingProvider,
 )
+from calisthenics_recommender.adapters.jsonl_embedded_exercise_search_repository import (
+    JsonlEmbeddedExerciseSearchRepository,
+)
 from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
     EmbeddedExerciseCacheMetadata,
     LocalEmbeddedExerciseRepository,
@@ -65,7 +68,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     recommendations = recommend_exercises(
         user_request=user_request,
-        embedded_exercise_repository=embedded_exercise_repository,
+        embedded_exercise_search_repository=JsonlEmbeddedExerciseSearchRepository(
+            embedded_exercise_repository
+        ),
         embedding_provider=embedding_provider,
         limit=args.limit,
     )

@@ -15,14 +15,14 @@ from calisthenics_recommender.application.recommend_exercises import (
 from calisthenics_recommender.domain.recommendation import Recommendation
 from calisthenics_recommender.domain.user_request import UserRequest
 from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
-from calisthenics_recommender.ports.embedded_exercise_repository import (
-    EmbeddedExerciseRepository,
+from calisthenics_recommender.ports.embedded_exercise_search_repository import (
+    EmbeddedExerciseSearchRepository,
 )
 
 
 def create_app(
     *,
-    embedded_exercise_repository: EmbeddedExerciseRepository,
+    embedded_exercise_search_repository: EmbeddedExerciseSearchRepository,
     embedding_provider: EmbeddingProvider,
 ) -> FastAPI:
     app = FastAPI()
@@ -41,7 +41,7 @@ def create_app(
         )
         recommendations = recommend_exercises(
             user_request=user_request,
-            embedded_exercise_repository=embedded_exercise_repository,
+            embedded_exercise_search_repository=embedded_exercise_search_repository,
             embedding_provider=embedding_provider,
             limit=request.limit,
         )

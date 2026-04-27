@@ -7,6 +7,9 @@ from typing import Sequence
 from calisthenics_recommender.adapters.csv_exercise_repository import (
     CsvExerciseRepository,
 )
+from calisthenics_recommender.adapters.jsonl_embedded_exercise_search_repository import (
+    JsonlEmbeddedExerciseSearchRepository,
+)
 from calisthenics_recommender.adapters.local_deterministic_embedding_provider import (
     LocalDeterministicEmbeddingProvider,
 )
@@ -21,9 +24,7 @@ from calisthenics_recommender.adapters.sentence_transformer_embedding_provider i
 from calisthenics_recommender.application.exercise_text_builder import (
     build_exercise_text,
 )
-from calisthenics_recommender.application.filters import exercise_matches_equipment
 from calisthenics_recommender.application.query_builder import build_query_text
-from calisthenics_recommender.application.retriever import retrieve_top_matches
 from calisthenics_recommender.domain.user_request import UserRequest
 from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
 
@@ -190,29 +191,25 @@ def _print_top_candidates(
     )
     query_text = build_query_text(user_request)
     query_embedding = embedding_provider.embed(query_text)
-    embedded_exercise_repository = LocalEmbeddedExerciseRepository(cache_path)
-    filtered_embedded_exercises = (
-        embedded_exercise
-        for embedded_exercise in embedded_exercise_repository.iter_embedded_exercises()
-        if exercise_matches_equipment(
-            embedded_exercise.exercise, user_request.available_equipment
-        )
+    search_repository = JsonlEmbeddedExerciseSearchRepository(
+        LocalEmbeddedExerciseRepository(cache_path)
     )
-    retrieval_results = retrieve_top_matches(
+    search_results = search_repository.search(
         query_embedding=query_embedding,
-        embedded_exercises=filtered_embedded_exercises,
+        available_equipment=user_request.available_equipment,
         limit=limit,
     )
 
     print("=== TOP CANDIDATES ===")
-    if not retrieval_results:
+    search_results = list(search_results)
+    if not search_results:
         print("No candidates found.")
         return
 
-    for rank, retrieval_result in enumerate(retrieval_results, start=1):
-        exercise = retrieval_result.exercise
+    for rank, search_result in enumerate(search_results, start=1):
+        exercise = search_result.exercise
         print(f"{rank}. Exercise: {exercise.name}")
-        print(f"   Score: {retrieval_result.score:.6f}")
+        print(f"   Score: {search_result.similarity:.6f}")
         print(f"   Families: {', '.join(exercise.families)}")
         print(f"   Categories: {', '.join(exercise.categories)}")
         print(f"   Required equipment: {', '.join(exercise.materials)}")
