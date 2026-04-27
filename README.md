@@ -4,9 +4,9 @@
 
 The stable v1 baseline is tagged as `v1-local-api-mvp`.
 
-The current backend v2 branch, `v2-sqlite-embedded-search-refactor`, keeps the same API request/response shape while adding SQLite embedded cache support, an embedded search port, JSONL and SQLite exact search adapters, TOML-driven runtime configuration, and operator CLI `--config` support.
+The current backend v2 branch keeps the same API request/response shape while adding SQLite embedded cache support, an embedded search port, JSONL and SQLite exact search adapters, TOML-driven runtime configuration, operator CLI `--config` support, and Docker packaging for the FastAPI runtime.
 
-Docker, cloud deployment, vector database integration, and frontend work are not implemented on this main backend branch.
+Cloud deployment, vector database integration, and frontend work are not implemented on this main backend branch.
 
 ---
 
@@ -73,7 +73,7 @@ v1 includes:
 
 ## Current Backend v2 State
 
-The current branch, `v2-sqlite-embedded-search-refactor`, adds:
+The current backend v2 line adds:
 
 - SQLite embedded cache writer/reader.
 - `EmbeddedExerciseSearchRepository` search port.
@@ -91,13 +91,13 @@ The current branch, `v2-sqlite-embedded-search-refactor`, adds:
   - embedded cache backend: JSONL or SQLite
   - embedding provider/model/dimension/prefixes
   - text builder version for cache building
+- Docker packaging for the FastAPI runtime service.
 
 Existing explicit CLI workflows are preserved where practical. The API request/response shape is unchanged.
 
 Not included on this branch:
 
 - No vector DB, sqlite-vec, pgvector, or FAISS.
-- No Docker image yet.
 - No cloud deployment yet.
 - No frontend merged into this backend branch.
 
@@ -419,12 +419,92 @@ Invoke-RestMethod `
   -Body $body
 ```
 
+### Run FastAPI With Docker
+
+The Docker image runs only the FastAPI runtime. Build embedded caches offline with the CLI, then mount the runtime config and cache into the container. The API container does not rebuild exercise embeddings on startup.
+
+The default Docker smoke test uses local deterministic embeddings and a SQLite embedded cache so it does not depend on Qwen, Hugging Face, internet access, or model cache availability.
+
+Prepare the local runtime config and deterministic SQLite smoke cache on the host:
+
+```powershell
+.\scripts\prepare-docker-smoke.ps1
+```
+
+If your PowerShell execution policy blocks local scripts, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\prepare-docker-smoke.ps1
+```
+
+The script copies `config/docker-runtime.toml.example` to `config/docker-runtime.toml` if needed, then runs `uv run build-exercise-cache --config .\config\docker-runtime.toml`. The generated `config/docker-runtime.toml` and `data/cache/docker_smoke_embeddings.sqlite` are local artifacts and are ignored by Git.
+
+```toml
+[raw_exercises]
+backend = "csv"
+csv_path = "../data/raw/calisthenics_exercises.csv"
+
+[embedded_cache]
+backend = "sqlite"
+path = "../data/cache/docker_smoke_embeddings.sqlite"
+
+[embedding]
+provider = "local-deterministic"
+model = "fake-hash-v1"
+dimension = 4
+query_prefix = ""
+text_builder_version = "v1"
+```
+
+Start the Dockerized FastAPI runtime:
+
+```powershell
+docker compose up --build
+```
+
+The Compose service builds from the root `Dockerfile`, maps port `8000:8000`, mounts `./config` to `/app/config:ro`, mounts `./data/cache` to `/app/data/cache:ro`, and sets `CALISTHENICS_RECOMMENDER_CONFIG_PATH=/app/config/docker-runtime.toml`.
+
+You can also run without Compose:
+
+```powershell
+docker build -t calisthenics-recommender-api .
+
+docker run --rm -p 8000:8000 `
+  -v ${PWD}\config:/app/config:ro `
+  -v ${PWD}\data\cache:/app/data/cache:ro `
+  -e CALISTHENICS_RECOMMENDER_CONFIG_PATH=/app/config/docker-runtime.toml `
+  calisthenics-recommender-api
+```
+
+From another terminal, smoke test the running API:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+```powershell
+$body = @{
+  target_family = "Pull-up"
+  goal = "I want to build pulling strength and improve my strict pull-ups."
+  current_level = "I can do 5 strict pull-ups, but the last reps are slow."
+  available_equipment = @("Bar")
+  limit = 5
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/recommend `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+The same image can run with `sentence-transformer` / Qwen if the runtime config selects it and the model is available or downloadable inside the container environment. The default Docker smoke test intentionally avoids that dependency.
+
 ---
 
 ## Current Limitations
 
 - No vector database, vector extension, or approximate nearest neighbor index yet.
-- No Docker image yet.
 - No frontend merged into the main backend branch.
 - No cloud deployment yet.
 - No auth, users, or persisted recommendation history.
@@ -437,8 +517,8 @@ Invoke-RestMethod `
 
 ## Next Direction
 
-The next backend milestone is Dockerizing the FastAPI runtime service. Docker should package and run the API runtime only, read `CALISTHENICS_RECOMMENDER_CONFIG_PATH`, and treat config/cache files as runtime artifacts.
+The Dockerized FastAPI runtime packages and runs the API only, reads `CALISTHENICS_RECOMMENDER_CONFIG_PATH`, and treats config/cache files as runtime artifacts.
 
-Do not treat Docker, cloud deployment, vector database integration, or frontend serving as implemented on this branch.
+Do not treat cloud deployment, vector database integration, or frontend serving as implemented on this branch.
 
 The detailed engineering plan is in `V2_REFACTOR_PLAN.md`.

@@ -1,0 +1,14 @@
+[raw_exercises]
+backend = "csv"
+csv_path = "../data/raw/calisthenics_exercises.csv"
+
+[embedded_cache]
+backend = "sqlite"
+path = "../data/cache/docker_smoke_embeddings.sqlite"
+
+[embedding]
+provider = "local-deterministic"
+model = "fake-hash-v1"
+dimension = 4
+query_prefix = ""
+text_builder_version = "v1"

@@ -12,6 +12,7 @@ __pycache__/
 # Environment / secrets
 .env
 .env.*
+config/docker-runtime.toml
 
 # IDE / OS
 .vscode/
@@ -22,4 +23,5 @@ Thumbs.db
 # Local data artifacts
 data/raw/calisthenics_exercises.csv
 data/cache/*.jsonl
+data/cache/*.sqlite
 data/db/
