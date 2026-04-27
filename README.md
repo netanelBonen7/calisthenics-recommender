@@ -4,9 +4,9 @@ Status: v1 closed.
 
 `calisthenics-recommender` is a local, embedding-based calisthenics exercise recommender built as a clean architecture backend project.
 
-v1 is a stable local API MVP. It can parse a raw exercise dataset, import raw exercises into SQLite, build a local embedded exercise cache, serve recommendations from that cache through CLI commands, and expose the same recommender through FastAPI.
+The `v1` tag is the stable local API MVP baseline. It can parse a raw exercise dataset, import raw exercises into SQLite, build a local embedded exercise cache, serve recommendations from that cache through CLI commands, and expose the same recommender through FastAPI.
 
-v1 is not a production recommender yet. It is a working local backend foundation with clear next steps for v2.
+The current v2 branch adds SQLite embedded cache support, an embedded search port, JSONL and SQLite search adapters, and a config-driven FastAPI runtime. CLI config support and Docker are still future work.
 
 ---
 
@@ -124,7 +124,7 @@ ports/embedded_exercise_repository.py
 ports/embedding_provider.py
 ```
 
-There is no search port in v1. Moving search behind a port is planned for v2.
+There is no search port in v1. The current v2 branch adds an embedded search port so search mechanics can live behind adapters.
 
 ### Adapters
 
@@ -139,7 +139,7 @@ adapters/fake_embedding_provider.py
 adapters/sentence_transformer_embedding_provider.py
 ```
 
-The embedded cache adapter in v1 is JSONL-backed through `local_embedded_exercise_cache.py`. There is no SQLite embedded cache yet.
+The embedded cache adapter in v1 is JSONL-backed through `local_embedded_exercise_cache.py`. The current v2 branch also adds SQLite embedded cache support plus JSONL and SQLite search adapters.
 
 ### API And CLI
 
@@ -175,6 +175,8 @@ UserRequest
 ```
 
 Runtime embeds only the user query. It does not re-embed every exercise per request.
+
+That flow describes the v1 baseline. On the current v2 branch, top-K retrieval sits behind the embedded search port, with JSONL and SQLite search adapters providing the backend-specific search behavior.
 
 ---
 
@@ -297,13 +299,22 @@ uv run build-exercise-cache `
 
 ### Run FastAPI Locally
 
-Use the same embedding provider family at runtime that was used to build the cache.
+Use a runtime TOML config file and point the API to it with `CALISTHENICS_RECOMMENDER_CONFIG_PATH`.
 
 ```powershell
-$env:CALISTHENICS_RECOMMENDER_CACHE_PATH = ".\data\cache\calisthenics_qwen_cache.jsonl"
-$env:CALISTHENICS_RECOMMENDER_EMBEDDING_PROVIDER = "sentence-transformer"
-$env:CALISTHENICS_RECOMMENDER_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
-$env:CALISTHENICS_RECOMMENDER_QUERY_PREFIX = ""
+$config = @"
+[embedded_cache]
+backend = "jsonl"
+path = "data/cache/calisthenics_qwen_cache.jsonl"
+
+[embedding]
+provider = "sentence-transformer"
+model = "Qwen/Qwen3-Embedding-0.6B"
+query_prefix = ""
+"@
+
+$config | Set-Content -Path .\runtime.toml
+$env:CALISTHENICS_RECOMMENDER_CONFIG_PATH = ".\runtime.toml"
 
 uv run uvicorn calisthenics_recommender.api.main:app --reload --host 127.0.0.1 --port 8000
 ```
@@ -381,12 +392,11 @@ uv run debug-recommendations `
 
 ## Current Limitations
 
-- No SQLite embedded cache yet.
-- No search port yet.
 - No vector database, vector extension, or approximate nearest neighbor index yet.
 - No Docker image yet.
 - No frontend yet.
 - No cloud deployment yet.
+- CLI config support is not implemented yet.
 - Recommendation quality has not been fully tuned.
 - `target_family` influences semantic retrieval and explanations, but it is not a deterministic hard filter or boost.
 - Difficulty/progression filtering is not implemented.
@@ -396,13 +406,17 @@ uv run debug-recommendations `
 
 ## v2 Direction
 
-v2 will refactor embedded cache and search responsibility:
+The current v2 branch already adds:
 
-- add SQLite embedded cache storage
-- add an embedded search port
-- move JSONL exact scan/filter/similarity/top-K behavior behind a JSONL search adapter
-- add a SQLite exact search adapter
-- wire CLI and API runtime config to the new backend options
-- Dockerize the FastAPI runtime service after the search/cache refactor
+- SQLite embedded cache storage
+- an embedded search port
+- a JSONL exact search adapter
+- a SQLite exact search adapter
+- config-driven FastAPI runtime wiring
+
+Still planned next:
+
+- CLI config support
+- Dockerized FastAPI runtime service
 
 The detailed engineering plan is in `V2_REFACTOR_PLAN.md`.
