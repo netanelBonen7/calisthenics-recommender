@@ -75,6 +75,7 @@ The goal is to build a maintainable local recommendation pipeline that can later
 - Local Sentence Transformers embeddings, using Qwen by default
 - Offline embedded exercise cache building
 - Runtime recommendation from a precomputed JSONL cache
+- FastAPI backend adapter with injectable `create_app(...)`
 - Deterministic equipment filtering before retrieval
 - Exact top-K retrieval over cached embeddings
 - Deterministic recommendation explanations
@@ -99,6 +100,8 @@ scripts/
 ├── demo_recommend.py
 └── debug_recommendations.py
 ```
+
+The source package now also includes an `api/` package for the FastAPI adapter.
 
 ### Domain Layer
 
@@ -178,6 +181,27 @@ cli/import_exercises_to_sqlite.py
 These CLI modules wire adapters and application functions together. They should not contain recommendation logic.
 
 The top-level `scripts/` files are thin compatibility wrappers around the packaged CLI entry points.
+
+---
+
+## HTTP API Adapter
+
+Milestone 16 adds a thin FastAPI adapter around the existing recommender core.
+
+The API package exposes an injectable app factory:
+
+```python
+from calisthenics_recommender.api import create_app
+```
+
+The adapter currently exposes:
+
+- `GET /health`
+- `POST /recommend`
+
+The route layer maps request JSON to `UserRequest`, calls the existing `recommend_exercises(...)` application workflow, and returns JSON recommendations. It does not contain recommendation logic.
+
+Local real-cache API run commands are intentionally deferred to Milestone 17.
 
 ---
 
@@ -478,7 +502,7 @@ Known limitations:
 - Difficulty/progression filtering is not implemented yet.
 - `current_level` is embedded semantically but not interpreted as structured progression logic.
 - No frontend UI yet.
-- No HTTP API yet.
+- No packaged local API run command yet.
 - No Docker image yet.
 - No vector database yet.
 - Local Qwen / Sentence Transformers setup can be heavy because it depends on transformer model files.
@@ -492,9 +516,7 @@ These limitations are intentional and tracked as future work.
 Likely next milestones:
 
 ```text
-15C - build cache from SQLite
-16 - FastAPI backend adapter
-17 - local backend demo with real cache
+17 - local API demo with real cache
 18 - frontend UI
 19 - Docker runtime service
 20 - optional cloud deployment

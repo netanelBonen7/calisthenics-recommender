@@ -13,6 +13,8 @@ The purpose of this roadmap is to keep future work focused and avoid mixing unre
 
 ## Current Completed State
 
+Milestone 16 — FastAPI backend adapter is now complete.
+
 Completed milestones:
 
 - 10A — Local fake-cache integration test
@@ -40,6 +42,7 @@ Current capabilities:
 - Local JSONL embedding cache under `data/cache/`
 - Fake deterministic embeddings for tests and development
 - Local Qwen/Sentence Transformers embeddings for real semantic retrieval
+- FastAPI adapter package with `GET /health` and `POST /recommend`
 - Recommendation debugging tools for inspecting query text, exercise text, and retrieval candidates
 - Full test suite passing
 
@@ -154,6 +157,8 @@ This proves that the offline cache-generation workflow can operate on a database
 ### Goal
 
 Expose the recommender through an HTTP API.
+
+Status: completed.
 
 Expected flow:
 

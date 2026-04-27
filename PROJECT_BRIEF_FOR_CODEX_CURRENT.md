@@ -63,9 +63,8 @@ Do not implement these until explicitly requested:
 - diversity reranking
 - vector database/index
 - frontend
-- FastAPI
 - Docker
-- SQLite/Postgres
+- Postgres
 - real embedding API integration
 - real dataset quality evaluation
 
@@ -396,6 +395,7 @@ adapters/csv_exercise_repository.py
 adapters/fake_embedding_provider.py
 adapters/local_embedded_exercise_cache.py
 adapters/sqlite_exercise_repository.py
+api/app.py
 ```
 
 Responsibilities:
@@ -424,6 +424,8 @@ Scripts should wire adapters and application functions together. They should not
 ## 10. Current file hierarchy
 
 Current source package shape:
+
+The current package now also includes an `api/` package for the FastAPI adapter.
 
 ```text
 src/
@@ -497,11 +499,32 @@ Completed milestones include:
 15A — Installable CLI entry points and script execution cleanup
 15B — SQLite raw exercise database
 15C — Build cache from SQLite
+16 — FastAPI backend adapter
 ```
 
 ---
 
 ## 12. Next recommended milestone
+
+Milestone 16 — FastAPI backend adapter is complete.
+
+Milestone 16 is now complete, and the next recommended milestone is the local API demo with a real cache.
+
+### Milestone 17 — Local API Demo With Real Cache
+
+Goal:
+
+Run the FastAPI backend locally against a real Qwen cache.
+
+Rules:
+
+- Provide local run commands.
+- Provide sample request commands for manual testing.
+- Verify the FastAPI adapter against a real local cache.
+- Keep this local.
+- Do not add Docker/cloud yet.
+
+Historical reference for the completed milestone:
 
 ### Milestone 16 — FastAPI Backend Adapter
 
@@ -554,6 +577,7 @@ Python 3.12
 Pydantic v2
 pytest
 ruff
+FastAPI
 standard library csv/json/pathlib/logging/typing/heapq
 standard library sqlite3
 ```
@@ -568,7 +592,6 @@ python-dotenv
 pandas
 SQLAlchemy
 FAISS / usearch / pgvector
-FastAPI
 uvicorn
 Docker
 React / frontend
