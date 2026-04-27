@@ -160,8 +160,8 @@ These become validated `Exercise` objects.
 ```text
 CsvExerciseRepository
 or SQLiteExerciseRepository
-→ ExerciseRepository.iter_exercises()
-→ Iterable[Exercise]
+-> ExerciseRepository.iter_exercises()
+-> Iterable[Exercise]
 ```
 
 The raw exercise source is streaming. It must not require loading all raw exercises into memory.
@@ -172,9 +172,9 @@ adapter populated from CSV; embeddings remain separate in the JSONL cache.
 
 ```text
 Iterable[Exercise]
-→ build_exercise_text(exercise)
-→ EmbeddingProvider.embed(exercise_text)
-→ EmbeddedExercise(exercise, embedding)
+-> build_exercise_text(exercise)
+-> EmbeddingProvider.embed(exercise_text)
+-> EmbeddedExercise(exercise, embedding)
 ```
 
 This is implemented by:
@@ -189,8 +189,8 @@ This is for offline/setup/cache-building flows, not request-time recommendation.
 
 ```text
 ExerciseRepository.iter_exercises()
-→ build_embedded_exercises(...)
-→ cache_writer.write_embedded_exercises(...)
+-> build_embedded_exercises(...)
+-> cache_writer.write_embedded_exercises(...)
 ```
 
 This is implemented by:
@@ -207,11 +207,11 @@ but the output remains the local JSONL embedded cache.
 
 ```text
 LocalEmbeddedExerciseCache
-→ writes JSONL cache with metadata
+-> writes JSONL cache with metadata
 
 LocalEmbeddedExerciseRepository
-→ streams EmbeddedExercise records from JSONL
-→ EmbeddedExerciseRepository.iter_embedded_exercises()
+-> streams EmbeddedExercise records from JSONL
+-> EmbeddedExerciseRepository.iter_embedded_exercises()
 ```
 
 The JSONL cache is a derived artifact, not the source of truth.
@@ -220,14 +220,14 @@ The JSONL cache is a derived artifact, not the source of truth.
 
 ```text
 UserRequest
-→ build_query_text(user_request)
-→ EmbeddingProvider.embed(query_text)
+-> build_query_text(user_request)
+-> EmbeddingProvider.embed(query_text)
 
 EmbeddedExerciseRepository.iter_embedded_exercises()
-→ lazy equipment filtering
-→ retrieve_top_matches(...)
-→ build_recommendations(...)
-→ list[Recommendation]
+-> lazy equipment filtering
+-> retrieve_top_matches(...)
+-> build_recommendations(...)
+-> list[Recommendation]
 ```
 
 Runtime must embed **only the user query**.
@@ -429,33 +429,30 @@ The current package now also includes an `api/` package for the FastAPI adapter.
 
 ```text
 src/
-└── calisthenics_recommender/
-    ├── domain/
-    │   ├── exercise.py
-    │   ├── user_request.py
-    │   ├── recommendation.py
-    │   └── embedded_exercise.py
-    │
-    ├── application/
-    │   ├── query_builder.py
-    │   ├── exercise_text_builder.py
-    │   ├── filters.py
-    │   ├── similarity.py
-    │   ├── retriever.py
-    │   ├── explanation_builder.py
-    │   ├── recommend_exercises.py
-    │   ├── embedded_exercise_builder.py
-    │   └── embedded_exercise_cache_workflow.py
-    │
-    ├── ports/
-    │   ├── exercise_repository.py
-    │   ├── embedded_exercise_repository.py
-    │   └── embedding_provider.py
-    │
-    └── adapters/
-        ├── csv_exercise_repository.py
-        ├── fake_embedding_provider.py
-        └── local_embedded_exercise_cache.py
+- calisthenics_recommender/
+  - domain/
+    - exercise.py
+    - user_request.py
+    - recommendation.py
+    - embedded_exercise.py
+  - application/
+    - query_builder.py
+    - exercise_text_builder.py
+    - filters.py
+    - similarity.py
+    - retriever.py
+    - explanation_builder.py
+    - recommend_exercises.py
+    - embedded_exercise_builder.py
+    - embedded_exercise_cache_workflow.py
+  - ports/
+    - exercise_repository.py
+    - embedded_exercise_repository.py
+    - embedding_provider.py
+  - adapters/
+    - csv_exercise_repository.py
+    - fake_embedding_provider.py
+    - local_embedded_exercise_cache.py
 ```
 
 Tests mirror the source structure:
@@ -474,59 +471,58 @@ tests/adapters/
 Completed milestones include:
 
 ```text
-0 — Repository and project setup
-1 — Domain models and validation
-2 — Text builders
-3 — Ports and fake embedding provider
-4 — Filtering and similarity primitives
-5 — Brute-force retriever
-6 — Explanation builder and response construction
-7 — End-to-end fake recommender
-7.5 — Runtime uses precomputed EmbeddedExercise objects
-8 — CSV exercise repository
-8.5 — Streaming EmbeddedExerciseRepository and bounded top-K retrieval
-8.6 — Streaming raw ExerciseRepository and CSV streaming
-9A — Embedded exercise builder
-9B — Local embedded exercise JSONL cache
-9C — Streaming embedded exercise cache build workflow
-10A — Local fake-cache integration test
-10B — Cache build CLI
-10C — Runtime recommendation CLI
-11 — Local Sentence Transformers/Qwen embedding provider
-12 — Real dataset CSV compatibility and smoke tests
-13 — Recommendation debug/inspection tooling
-14A — README overview
-15A — Installable CLI entry points and script execution cleanup
-15B — SQLite raw exercise database
-15C — Build cache from SQLite
-16 — FastAPI backend adapter
+0 - Repository and project setup
+1 - Domain models and validation
+2 - Text builders
+3 - Ports and fake embedding provider
+4 - Filtering and similarity primitives
+5 - Brute-force retriever
+6 - Explanation builder and response construction
+7 - End-to-end fake recommender
+7.5 - Runtime uses precomputed EmbeddedExercise objects
+8 - CSV exercise repository
+8.5 - Streaming EmbeddedExerciseRepository and bounded top-K retrieval
+8.6 - Streaming raw ExerciseRepository and CSV streaming
+9A - Embedded exercise builder
+9B - Local embedded exercise JSONL cache
+9C - Streaming embedded exercise cache build workflow
+10A - Local fake-cache integration test
+10B - Cache build CLI
+10C - Runtime recommendation CLI
+11 - Local Sentence Transformers/Qwen embedding provider
+12 - Real dataset CSV compatibility and smoke tests
+13 - Recommendation debug/inspection tooling
+14A - README overview
+15A - Installable CLI entry points and script execution cleanup
+15B - SQLite raw exercise database
+15C - Build cache from SQLite
+16 - FastAPI backend adapter
+17 - Local API demo with real cache
 ```
-
 ---
 
 ## 12. Next recommended milestone
 
-Milestone 16 — FastAPI backend adapter is complete.
+Milestone 17 - Local API demo with a real cache is complete.
 
-Milestone 16 is now complete, and the next recommended milestone is the local API demo with a real cache.
+The next recommended milestone is the optional frontend UI.
 
-### Milestone 17 — Local API Demo With Real Cache
+### Milestone 18 - Optional Frontend UI
 
 Goal:
 
-Run the FastAPI backend locally against a real Qwen cache.
+Add a simple user-facing frontend on top of the existing local FastAPI backend.
 
 Rules:
 
-- Provide local run commands.
-- Provide sample request commands for manual testing.
-- Verify the FastAPI adapter against a real local cache.
-- Keep this local.
-- Do not add Docker/cloud yet.
+- Keep the UI thin.
+- Keep recommendation logic in the backend/core.
+- Reuse the existing `/recommend` API.
+- Do not mix Docker/cloud/vector database work into the same milestone.
 
 Historical reference for the completed milestone:
 
-### Milestone 16 — FastAPI Backend Adapter
+### Milestone 16 - FastAPI Backend Adapter
 
 Goal:
 
@@ -534,9 +530,9 @@ Expose the existing recommender core through an HTTP API:
 
 ```text
 POST /recommend
-→ UserRequest
-→ existing recommender core
-→ JSON response
+-> UserRequest
+-> existing recommender core
+-> JSON response
 ```
 
 Rules:
@@ -548,7 +544,6 @@ Rules:
 - Do not call real embedding APIs.
 - Do not run Qwen in automated tests.
 - Do not add frontend/Docker/cloud/vector database work.
-
 ---
 
 ## 13. Future milestone ideas
@@ -556,12 +551,12 @@ Rules:
 After 10A, likely sequence:
 
 ```text
-10B — Cache build script/command
-10C — Runtime demo script/CLI
-11 — Real embedding provider adapter
-12 — Real dataset integration and smoke tests
-13 — Recommendation quality/sanity evaluation
-14 — README, architecture docs, polish
+10B - Cache build script/command
+10C - Runtime demo script/CLI
+11 - Real embedding provider adapter
+12 - Real dataset integration and smoke tests
+13 - Recommendation quality/sanity evaluation
+14 - README, architecture docs, polish
 ```
 
 These are not fixed. Re-evaluate before each milestone.
@@ -578,6 +573,7 @@ Pydantic v2
 pytest
 ruff
 FastAPI
+uvicorn
 standard library csv/json/pathlib/logging/typing/heapq
 standard library sqlite3
 ```
@@ -592,11 +588,9 @@ python-dotenv
 pandas
 SQLAlchemy
 FAISS / usearch / pgvector
-uvicorn
 Docker
 React / frontend
 ```
-
 ---
 
 ## 15. TDD and workflow rules
@@ -626,9 +620,9 @@ Usually:
 
 ```text
 feature branch
-→ commit branch
-→ final pytest
-→ squash merge into master
+-> commit branch
+-> final pytest
+-> squash merge into master
 ```
 
 ---
@@ -719,3 +713,4 @@ Testing explanation:
 Storage explanation:
 
 > I treat embeddings as derived/versioned data, not source-of-truth data. The raw exercise dataset remains separate from the embedded exercise cache. The cache has metadata such as embedding model, vector dimension, and text-builder version to prevent silently using incompatible vectors.
+

@@ -1,11 +1,11 @@
-# Project Roadmap — Next Milestones
+# Project Roadmap - Next Milestones
 
 This document tracks the planned next milestones for `calisthenics-recommender`.
 
 Use this file together with:
 
-- `PROJECT_BRIEF_FOR_CODEX_CURRENT.md` — current architecture/source-of-truth brief
-- `README.md` — public project overview and usage guide
+- `PROJECT_BRIEF_FOR_CODEX_CURRENT.md` - current architecture/source-of-truth brief
+- `README.md` - public project overview and usage guide
 
 The purpose of this roadmap is to keep future work focused and avoid mixing unrelated milestones.
 
@@ -13,20 +13,22 @@ The purpose of this roadmap is to keep future work focused and avoid mixing unre
 
 ## Current Completed State
 
-Milestone 16 — FastAPI backend adapter is now complete.
+Milestone 17 - Local API demo with real cache is now complete.
 
 Completed milestones:
 
-- 10A — Local fake-cache integration test
-- 10B — Cache build CLI
-- 10C — Runtime recommendation CLI
-- 11 — Local Sentence Transformers/Qwen embedding provider
-- 12 — Real dataset CSV compatibility and smoke tests
-- 13 — Recommendation debug/inspection tooling
-- 14A — README overview
-- 15A — Installable CLI entry points and script execution cleanup
-- 15B — SQLite raw exercise database
-- 15C — Build cache from SQLite
+- 10A - Local fake-cache integration test
+- 10B - Cache build CLI
+- 10C - Runtime recommendation CLI
+- 11 - Local Sentence Transformers/Qwen embedding provider
+- 12 - Real dataset CSV compatibility and smoke tests
+- 13 - Recommendation debug/inspection tooling
+- 14A - README overview
+- 15A - Installable CLI entry points and script execution cleanup
+- 15B - SQLite raw exercise database
+- 15C - Build cache from SQLite
+- 16 - FastAPI backend adapter
+- 17 - Local API demo with real cache
 
 Current capabilities:
 
@@ -43,6 +45,8 @@ Current capabilities:
 - Fake deterministic embeddings for tests and development
 - Local Qwen/Sentence Transformers embeddings for real semantic retrieval
 - FastAPI adapter package with `GET /health` and `POST /recommend`
+- Local FastAPI runtime wiring through `calisthenics_recommender.api.main:app`
+- Documented `uvicorn` run command plus sample `/health` and `/recommend` requests
 - Recommendation debugging tools for inspecting query text, exercise text, and retrieval candidates
 - Full test suite passing
 
@@ -64,18 +68,18 @@ This project should show a clear evolution:
 
 ```text
 CSV dataset
-→ clean architecture core
-→ precomputed JSONL embedding cache
-→ local Qwen embeddings
-→ SQLite adapter
-→ FastAPI backend
-→ optional frontend
-→ optional Docker/cloud
+-> clean architecture core
+-> precomputed JSONL embedding cache
+-> local Qwen embeddings
+-> SQLite adapter
+-> FastAPI backend
+-> optional frontend
+-> optional Docker/cloud
 ```
 
 ---
 
-## Milestone 15B — SQLite Raw Exercise Database
+## Milestone 15B - SQLite Raw Exercise Database
 
 Status: completed.
 
@@ -87,9 +91,9 @@ Expected flow:
 
 ```text
 CSV
-→ SQLite import
-→ SQLiteExerciseRepository
-→ existing cache/recommendation pipeline
+-> SQLite import
+-> SQLiteExerciseRepository
+-> existing cache/recommendation pipeline
 ```
 
 ### Scope
@@ -121,7 +125,7 @@ This supports the explanation that infrastructure can evolve without rewriting t
 
 ---
 
-## Milestone 15C — Build Cache From SQLite
+## Milestone 15C - Build Cache From SQLite
 
 Status: completed.
 
@@ -133,8 +137,8 @@ Expected flow:
 
 ```text
 SQLiteExerciseRepository
-→ build_embedded_exercise_cache
-→ JSONL cache
+-> build_embedded_exercise_cache
+-> JSONL cache
 ```
 
 ### Scope
@@ -152,7 +156,7 @@ This proves that the offline cache-generation workflow can operate on a database
 
 ---
 
-## Milestone 16 — FastAPI Backend Adapter
+## Milestone 16 - FastAPI Backend Adapter
 
 ### Goal
 
@@ -164,9 +168,9 @@ Expected flow:
 
 ```text
 POST /recommend
-→ UserRequest
-→ existing recommender core
-→ JSON response
+-> UserRequest
+-> existing recommender core
+-> JSON response
 ```
 
 ### Scope
@@ -185,25 +189,27 @@ This turns the recommender from a CLI-only system into a backend service while p
 
 ---
 
-## Milestone 17 — Local API Demo With Real Cache
+## Milestone 17 - Local API Demo With Real Cache
 
 ### Goal
 
 Run the FastAPI backend locally against a real Qwen cache.
 
+Status: completed.
+
 Expected flow:
 
 ```text
 real Qwen JSONL cache
-→ FastAPI backend
-→ POST /recommend
-→ JSON recommendations
+-> FastAPI backend
+-> POST /recommend
+-> JSON recommendations
 ```
 
 ### Scope
 
 - Provide local run commands.
-- Provide sample request commands using curl/Postman-style examples.
+- Provide sample request commands for manual testing.
 - Verify response shape.
 - Keep this local.
 - Do not add Docker/cloud yet.
@@ -214,7 +220,7 @@ This gives a realistic local backend demo that can be shown or explained in inte
 
 ---
 
-## Milestone 18 — Optional Frontend UI
+## Milestone 18 - Optional Frontend UI
 
 ### Goal
 
@@ -224,8 +230,8 @@ Preferred direction:
 
 ```text
 React + Vite frontend
-→ FastAPI backend
-→ existing recommender core
+-> FastAPI backend
+-> existing recommender core
 ```
 
 ### Scope
@@ -249,7 +255,7 @@ This turns the backend service into a more visual demo and shows full-stack awar
 
 ---
 
-## Milestone 19 — Docker Runtime Service
+## Milestone 19 - Docker Runtime Service
 
 ### Goal
 
@@ -266,12 +272,12 @@ Containerize the FastAPI runtime service.
 
 ```text
 offline cache build
-→ JSONL cache artifact
+-> JSONL cache artifact
 
 runtime container
-→ loads existing cache
-→ embeds only user query
-→ returns recommendations
+-> loads existing cache
+-> embeds only user query
+-> returns recommendations
 ```
 
 ### Interview Value
@@ -280,7 +286,7 @@ This shows deployment readiness while preserving the offline-vs-runtime separati
 
 ---
 
-## Milestone 20 — Optional Cloud Deployment
+## Milestone 20 - Optional Cloud Deployment
 
 ### Goal
 
@@ -300,9 +306,9 @@ Explain or implement cloud deployment if time allows.
 
 ```text
 FastAPI container
-→ managed container service
-→ loads embedding cache artifact from object storage
-→ serves POST /recommend
+-> managed container service
+-> loads embedding cache artifact from object storage
+-> serves POST /recommend
 ```
 
 ### Interview Value
@@ -311,7 +317,7 @@ This demonstrates that the local architecture has a believable path to cloud dep
 
 ---
 
-## Milestone 21 — Recommendation Quality Tuning
+## Milestone 21 - Recommendation Quality Tuning
 
 ### Goal
 
@@ -352,7 +358,7 @@ Avoid these until the core local/backend system is complete:
 
 A concise explanation of the system evolution:
 
-> I started with a clean architecture recommender core and a CSV adapter because it was the simplest transparent data source. Then I added an offline embedding-cache workflow so exercise embeddings are precomputed and runtime recommendation only embeds the user query. I added local fake embeddings for deterministic tests and Qwen/Sentence Transformers for real local semantic retrieval. The next step is SQLite, which proves the repository boundary by replacing CSV with a local database adapter. From there, the same core can be exposed through FastAPI, then optionally a frontend, Docker, and cloud deployment.
+> I started with a clean architecture recommender core and a CSV adapter because it was the simplest transparent data source. Then I added an offline embedding-cache workflow so exercise embeddings are precomputed and runtime recommendation only embeds the user query. I added local fake embeddings for deterministic tests and Qwen/Sentence Transformers for real local semantic retrieval, then proved the repository boundary with a SQLite adapter. The same core now runs behind FastAPI locally through a real-cache `uvicorn` demo, with optional frontend, Docker, and cloud work left for later.
 
 Future cloud explanation:
 

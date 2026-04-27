@@ -76,6 +76,7 @@ The goal is to build a maintainable local recommendation pipeline that can later
 - Offline embedded exercise cache building
 - Runtime recommendation from a precomputed JSONL cache
 - FastAPI backend adapter with injectable `create_app(...)`
+- Local FastAPI runtime wiring for `uvicorn` against an existing JSONL cache
 - Deterministic equipment filtering before retrieval
 - Exact top-K retrieval over cached embeddings
 - Deterministic recommendation explanations
@@ -201,7 +202,10 @@ The adapter currently exposes:
 
 The route layer maps request JSON to `UserRequest`, calls the existing `recommend_exercises(...)` application workflow, and returns JSON recommendations. It does not contain recommendation logic.
 
-Local real-cache API run commands are intentionally deferred to Milestone 17.
+For local runtime wiring, the project also exposes:
+
+- `calisthenics_recommender.api.runtime.create_configured_app_from_env(...)`
+- `calisthenics_recommender.api.main:app` for `uvicorn`
 
 ---
 
@@ -367,11 +371,59 @@ This mode uses a real local open-source embedding model. The first run may downl
 
 ```powershell
 uv run build-exercise-cache `
-  --input-csv .\data\raw\calisthenics_exercises.csv `
+  --input-db .\data\db\calisthenics_exercises.sqlite `
   --output-cache .\data\cache\calisthenics_qwen_cache.jsonl `
   --embedding-provider sentence-transformer `
   --embedding-model "Qwen/Qwen3-Embedding-0.6B" `
   --text-builder-version v1
+```
+
+### Run The Local FastAPI API Demo
+
+Use the same embedding provider family at runtime that was used to build the cache.
+
+Set the runtime environment:
+
+```powershell
+$env:CALISTHENICS_RECOMMENDER_CACHE_PATH = ".\data\cache\calisthenics_qwen_cache.jsonl"
+$env:CALISTHENICS_RECOMMENDER_EMBEDDING_PROVIDER = "sentence-transformer"
+```
+
+Optional overrides:
+
+```powershell
+$env:CALISTHENICS_RECOMMENDER_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+$env:CALISTHENICS_RECOMMENDER_QUERY_PREFIX = ""
+```
+
+Run the local server:
+
+```powershell
+uv run uvicorn calisthenics_recommender.api.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Health check:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+Recommendation request:
+
+```powershell
+$body = @{
+  target_family = "Pull-up"
+  goal = "I want to build pulling strength and improve my strict pull-ups."
+  current_level = "I can do 5 strict pull-ups, but the last reps are slow."
+  available_equipment = @("Bar")
+  limit = 5
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8000/recommend `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $body
 ```
 
 ### Run Demo Recommendations From A Cache
@@ -502,7 +554,6 @@ Known limitations:
 - Difficulty/progression filtering is not implemented yet.
 - `current_level` is embedded semantically but not interpreted as structured progression logic.
 - No frontend UI yet.
-- No packaged local API run command yet.
 - No Docker image yet.
 - No vector database yet.
 - Local Qwen / Sentence Transformers setup can be heavy because it depends on transformer model files.
@@ -516,7 +567,6 @@ These limitations are intentional and tracked as future work.
 Likely next milestones:
 
 ```text
-17 - local API demo with real cache
 18 - frontend UI
 19 - Docker runtime service
 20 - optional cloud deployment
