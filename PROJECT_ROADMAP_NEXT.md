@@ -24,6 +24,7 @@ Completed milestones:
 - 14A — README overview
 - 15A — Installable CLI entry points and script execution cleanup
 - 15B — SQLite raw exercise database
+- 15C — Build cache from SQLite
 
 Current capabilities:
 
@@ -35,6 +36,7 @@ Current capabilities:
   - `uv run import-exercises-to-sqlite`
 - Real dataset parsing from `data/raw/calisthenics_exercises.csv`
 - SQLite raw exercise import and repository under `data/db/`
+- Cache building from CSV or SQLite into local JSONL under `data/cache/`
 - Local JSONL embedding cache under `data/cache/`
 - Fake deterministic embeddings for tests and development
 - Local Qwen/Sentence Transformers embeddings for real semantic retrieval
@@ -117,6 +119,8 @@ This supports the explanation that infrastructure can evolve without rewriting t
 ---
 
 ## Milestone 15C — Build Cache From SQLite
+
+Status: completed.
 
 ### Goal
 

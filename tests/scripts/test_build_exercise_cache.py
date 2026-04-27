@@ -8,11 +8,20 @@ import pytest
 from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
     LocalEmbeddedExerciseRepository,
 )
+from calisthenics_recommender.adapters.sqlite_exercise_repository import (
+    SQLiteExerciseRepository,
+)
 
 
 def load_build_exercise_cache_module():
     return importlib.import_module(
         "calisthenics_recommender.cli.build_exercise_cache"
+    )
+
+
+def load_import_exercises_to_sqlite_module():
+    return importlib.import_module(
+        "calisthenics_recommender.cli.import_exercises_to_sqlite"
     )
 
 
@@ -50,6 +59,18 @@ def write_exercise_csv(path: Path) -> None:
                 },
             ]
         )
+
+
+def import_csv_to_sqlite(csv_path: Path, sqlite_path: Path) -> int:
+    module = load_import_exercises_to_sqlite_module()
+    return module.main(
+        [
+            "--input-csv",
+            str(csv_path),
+            "--output-db",
+            str(sqlite_path),
+        ]
+    )
 
 
 def test_build_exercise_cache_main_creates_a_readable_local_cache(tmp_path):
@@ -95,6 +116,93 @@ def test_build_exercise_cache_main_creates_a_readable_local_cache(tmp_path):
     assert len(embedded_exercises) == 2
     assert all(len(item.embedding) == 4 for item in embedded_exercises)
     assert embedded_exercises[0].embedding != embedded_exercises[1].embedding
+
+
+def test_build_exercise_cache_main_creates_a_readable_local_cache_from_sqlite(
+    tmp_path,
+):
+    module = load_build_exercise_cache_module()
+    csv_path = tmp_path / "exercises.csv"
+    sqlite_path = tmp_path / "exercises.sqlite"
+    cache_path = tmp_path / "embedded_exercises.jsonl"
+    write_exercise_csv(csv_path)
+
+    import_exit_code = import_csv_to_sqlite(csv_path, sqlite_path)
+    exit_code = module.main(
+        [
+            "--input-db",
+            str(sqlite_path),
+            "--output-cache",
+            str(cache_path),
+            "--embedding-model",
+            "fake-hash-v1",
+            "--embedding-dimension",
+            "4",
+            "--text-builder-version",
+            "v1",
+        ]
+    )
+
+    assert import_exit_code == 0
+    assert exit_code == 0
+    assert cache_path.exists()
+    assert len(list(SQLiteExerciseRepository(sqlite_path).iter_exercises())) == 2
+
+    embedded_exercises = list(
+        LocalEmbeddedExerciseRepository(cache_path).iter_embedded_exercises()
+    )
+
+    assert [item.exercise.name for item in embedded_exercises] == [
+        "Pull Up Negative",
+        "Body Row",
+    ]
+    assert len(embedded_exercises) == 2
+    assert all(len(item.embedding) == 4 for item in embedded_exercises)
+
+
+def test_build_exercise_cache_main_requires_exactly_one_raw_input_source(tmp_path):
+    module = load_build_exercise_cache_module()
+    cache_path = tmp_path / "embedded_exercises.jsonl"
+
+    with pytest.raises(SystemExit):
+        module.main(
+            [
+                "--output-cache",
+                str(cache_path),
+                "--embedding-model",
+                "fake-hash-v1",
+                "--embedding-dimension",
+                "4",
+                "--text-builder-version",
+                "v1",
+            ]
+        )
+
+
+def test_build_exercise_cache_main_rejects_multiple_raw_input_sources(tmp_path):
+    module = load_build_exercise_cache_module()
+    csv_path = tmp_path / "exercises.csv"
+    sqlite_path = tmp_path / "exercises.sqlite"
+    cache_path = tmp_path / "embedded_exercises.jsonl"
+    write_exercise_csv(csv_path)
+
+    with pytest.raises(SystemExit):
+        module.main(
+            [
+                "--input-csv",
+                str(csv_path),
+                "--input-db",
+                str(sqlite_path),
+                "--output-cache",
+                str(cache_path),
+                "--embedding-model",
+                "fake-hash-v1",
+                "--embedding-dimension",
+                "4",
+                "--text-builder-version",
+                "v1",
+            ]
+        )
 
 
 def test_build_exercise_cache_main_supports_sentence_transformer_mode_without_real_model(

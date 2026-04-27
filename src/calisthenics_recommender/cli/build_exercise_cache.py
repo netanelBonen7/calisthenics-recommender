@@ -14,22 +14,29 @@ from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
     EmbeddedExerciseCacheMetadata,
     LocalEmbeddedExerciseCache,
 )
+from calisthenics_recommender.adapters.sqlite_exercise_repository import (
+    SQLiteExerciseRepository,
+)
 from calisthenics_recommender.adapters.sentence_transformer_embedding_provider import (
     SentenceTransformerEmbeddingProvider,
 )
 from calisthenics_recommender.application.embedded_exercise_cache_workflow import (
     build_embedded_exercise_cache,
 )
+from calisthenics_recommender.ports.exercise_repository import ExerciseRepository
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Build a local embedded exercise cache from a CSV file using "
-            "either deterministic local embeddings or a sentence-transformer model."
+            "Build a local embedded exercise cache from a CSV file or SQLite "
+            "database using either deterministic local embeddings or a "
+            "sentence-transformer model."
         )
     )
-    parser.add_argument("--input-csv", required=True, type=Path)
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument("--input-csv", type=Path)
+    input_group.add_argument("--input-db", type=Path)
     parser.add_argument("--output-cache", required=True, type=Path)
     parser.add_argument(
         "--embedding-provider",
@@ -46,7 +53,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_argument_parser().parse_args(list(argv) if argv is not None else None)
     embedding_provider, metadata = _build_embedding_provider_and_metadata(args)
-    exercise_repository = CsvExerciseRepository(args.input_csv)
+    exercise_repository = _build_exercise_repository(args)
     cache_writer = LocalEmbeddedExerciseCache(args.output_cache)
 
     build_embedded_exercise_cache(
@@ -56,6 +63,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         metadata=metadata,
     )
     return 0
+
+
+def _build_exercise_repository(args: argparse.Namespace) -> ExerciseRepository:
+    if args.input_db is not None:
+        return SQLiteExerciseRepository(args.input_db)
+
+    if args.input_csv is not None:
+        return CsvExerciseRepository(args.input_csv)
+
+    raise ValueError("Exactly one raw exercise input source is required")
 
 
 def _build_embedding_provider_and_metadata(

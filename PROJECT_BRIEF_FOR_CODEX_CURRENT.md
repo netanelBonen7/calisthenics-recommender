@@ -201,6 +201,8 @@ build_embedded_exercise_cache(...)
 ```
 
 The workflow must stay streaming. It should not materialize all raw exercises or embedded exercises into memory.
+The cache-build CLI may choose CSV or SQLite as the raw exercise input source,
+but the output remains the local JSONL embedded cache.
 
 ### 7.4 Local embedded cache pipeline
 
@@ -494,32 +496,35 @@ Completed milestones include:
 14A — README overview
 15A — Installable CLI entry points and script execution cleanup
 15B — SQLite raw exercise database
+15C — Build cache from SQLite
 ```
 
 ---
 
 ## 12. Next recommended milestone
 
-### Milestone 15C — Build cache from SQLite
+### Milestone 16 — FastAPI Backend Adapter
 
 Goal:
 
-Allow the cache-build CLI to choose SQLite as a raw exercise input source:
+Expose the existing recommender core through an HTTP API:
 
 ```text
-SQLiteExerciseRepository
-→ build_embedded_exercise_cache
-→ LocalEmbeddedExerciseCache JSONL
+POST /recommend
+→ UserRequest
+→ existing recommender core
+→ JSON response
 ```
 
 Rules:
 
-- Keep embeddings in JSONL.
+- Add FastAPI as an adapter layer only.
+- Use the existing application logic.
+- Keep recommendation logic out of the endpoint.
 - Use fake/deterministic embeddings in automated tests.
 - Do not call real embedding APIs.
 - Do not run Qwen in automated tests.
-- Do not add FastAPI/frontend/Docker/cloud/vector database work.
-- Do not move embeddings into SQLite.
+- Do not add frontend/Docker/cloud/vector database work.
 
 ---
 

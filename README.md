@@ -188,8 +188,8 @@ The top-level `scripts/` files are thin compatibility wrappers around the packag
 Exercise embeddings are built offline and stored as a derived cache.
 
 ```text
-CSV
-→ CsvExerciseRepository
+CSV or SQLite
+→ ExerciseRepository
 → build_exercise_text(...)
 → EmbeddingProvider.embed(...)
 → EmbeddedExercise
@@ -316,6 +316,20 @@ This mode is fast and useful for development and testing.
 ```powershell
 uv run build-exercise-cache `
   --input-csv .\data\raw\calisthenics_exercises.csv `
+  --output-cache .\data\cache\calisthenics_fake_cache.jsonl `
+  --embedding-provider local-deterministic `
+  --embedding-model fake-hash-v1 `
+  --embedding-dimension 4 `
+  --text-builder-version v1
+```
+
+### Build A Cache From SQLite With Local Deterministic Embeddings
+
+This uses an imported local SQLite raw exercise database and still writes the embedded cache to JSONL.
+
+```powershell
+uv run build-exercise-cache `
+  --input-db .\data\db\calisthenics_exercises.sqlite `
   --output-cache .\data\cache\calisthenics_fake_cache.jsonl `
   --embedding-provider local-deterministic `
   --embedding-model fake-hash-v1 `
