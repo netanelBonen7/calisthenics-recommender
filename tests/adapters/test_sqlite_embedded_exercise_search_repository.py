@@ -71,14 +71,20 @@ def get_sqlite_embedded_exercise_search_repository():
     return getattr(module, "SQLiteEmbeddedExerciseSearchRepository")
 
 
+def exercise_id_for(name: str) -> str:
+    return name.strip().lower().replace(" ", "-")
+
+
 def exercise_named(
     name: str,
     *,
     materials: list[str],
     embedding_family: str = "Pull-up",
+    exercise_id: str | None = None,
 ):
     Exercise = get_exercise_model()
     return Exercise(
+        exercise_id=exercise_id_for(name) if exercise_id is None else exercise_id,
         name=name,
         description=f"{name} description.",
         muscle_groups=["Back"],
@@ -93,12 +99,14 @@ def embedded_exercise_named(
     embedding: list[float],
     *,
     materials: list[str] | None = None,
+    exercise_id: str | None = None,
 ):
     EmbeddedExercise = get_embedded_exercise_model()
     return EmbeddedExercise(
         exercise=exercise_named(
             name,
             materials=["Bar"] if materials is None else materials,
+            exercise_id=exercise_id,
         ),
         embedding=embedding,
     )
@@ -149,6 +157,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
         """
         CREATE TABLE embedded_exercises (
             id INTEGER PRIMARY KEY,
+            exercise_id TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL,
             description TEXT NOT NULL,
             muscle_groups TEXT NOT NULL,
@@ -190,6 +199,7 @@ def insert_metadata(connection: sqlite3.Connection, **overrides) -> None:
 
 def insert_embedded_exercise_row(connection: sqlite3.Connection, **overrides) -> None:
     row = {
+        "exercise_id": "pull-up",
         "name": "Pull Up",
         "description": "Pull Up description.",
         "muscle_groups": json.dumps(["Back"]),
@@ -199,9 +209,12 @@ def insert_embedded_exercise_row(connection: sqlite3.Connection, **overrides) ->
         "embedding": json.dumps([1.0, 0.0]),
     }
     row.update(overrides)
+    if "exercise_id" not in overrides:
+        row["exercise_id"] = exercise_id_for(row["name"])
     connection.execute(
         """
         INSERT INTO embedded_exercises (
+            exercise_id,
             name,
             description,
             muscle_groups,
@@ -211,6 +224,7 @@ def insert_embedded_exercise_row(connection: sqlite3.Connection, **overrides) ->
             embedding
         )
         VALUES (
+            :exercise_id,
             :name,
             :description,
             :muscle_groups,

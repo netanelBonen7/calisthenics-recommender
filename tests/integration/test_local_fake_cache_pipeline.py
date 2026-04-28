@@ -43,6 +43,7 @@ def test_local_fake_cache_pipeline_builds_cache_and_recommends_from_it(tmp_path)
     cache_path = tmp_path / "embedded_exercises.jsonl"
     rows = [
         {
+            "exercise_id": "pull-up-negative",
             "name": "Pull Up Negative",
             "description": "A controlled eccentric pull-up variation for building strength.",
             "muscle_groups": "Back;Biceps",
@@ -51,6 +52,7 @@ def test_local_fake_cache_pipeline_builds_cache_and_recommends_from_it(tmp_path)
             "categories": "Upper Body Pull",
         },
         {
+            "exercise_id": "body-row",
             "name": "Body Row",
             "description": "A horizontal pulling variation that adds volume with a bar.",
             "muscle_groups": "Back;Biceps",
@@ -59,6 +61,7 @@ def test_local_fake_cache_pipeline_builds_cache_and_recommends_from_it(tmp_path)
             "categories": "Upper Body Pull",
         },
         {
+            "exercise_id": "ring-pull-up",
             "name": "Ring Pull Up",
             "description": "A pull-up variation that requires rings.",
             "muscle_groups": "Back;Biceps",
@@ -73,6 +76,7 @@ def test_local_fake_cache_pipeline_builds_cache_and_recommends_from_it(tmp_path)
             csv_file,
             fieldnames=[
                 "name",
+                "exercise_id",
                 "description",
                 "muscle_groups",
                 "families",
@@ -85,6 +89,7 @@ def test_local_fake_cache_pipeline_builds_cache_and_recommends_from_it(tmp_path)
 
     expected_exercises = [
         Exercise(
+            exercise_id="pull-up-negative",
             name="Pull Up Negative",
             description="A controlled eccentric pull-up variation for building strength.",
             muscle_groups=["Back", "Biceps"],
@@ -93,6 +98,7 @@ def test_local_fake_cache_pipeline_builds_cache_and_recommends_from_it(tmp_path)
             categories=["Upper Body Pull"],
         ),
         Exercise(
+            exercise_id="body-row",
             name="Body Row",
             description="A horizontal pulling variation that adds volume with a bar.",
             muscle_groups=["Back", "Biceps"],
@@ -101,6 +107,7 @@ def test_local_fake_cache_pipeline_builds_cache_and_recommends_from_it(tmp_path)
             categories=["Upper Body Pull"],
         ),
         Exercise(
+            exercise_id="ring-pull-up",
             name="Ring Pull Up",
             description="A pull-up variation that requires rings.",
             muscle_groups=["Back", "Biceps"],

@@ -38,6 +38,7 @@ def write_exercise_csv(path: Path) -> None:
         writer = csv.DictWriter(
             csv_file,
             fieldnames=[
+                "exercise_id",
                 "name",
                 "description",
                 "muscle_groups",
@@ -50,6 +51,7 @@ def write_exercise_csv(path: Path) -> None:
         writer.writerows(
             [
                 {
+                    "exercise_id": "pull-up-negative",
                     "name": "Pull Up Negative",
                     "description": "A controlled eccentric pull-up variation.",
                     "muscle_groups": "Back;Biceps",
@@ -58,6 +60,7 @@ def write_exercise_csv(path: Path) -> None:
                     "categories": "Upper Body Pull",
                 },
                 {
+                    "exercise_id": "body-row",
                     "name": "Body Row",
                     "description": "A horizontal pulling variation with a bar.",
                     "muscle_groups": "Back;Biceps",

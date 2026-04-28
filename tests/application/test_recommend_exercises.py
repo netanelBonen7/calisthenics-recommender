@@ -41,6 +41,7 @@ def exercise_named(
 ):
     Exercise = get_exercise_model()
     return Exercise(
+        exercise_id=name.lower().replace(" ", "-"),
         name=name,
         description=description,
         muscle_groups=["Back"],

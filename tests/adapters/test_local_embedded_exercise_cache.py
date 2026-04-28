@@ -45,12 +45,17 @@ def get_local_embedded_exercise_repository():
     return getattr(module, "LocalEmbeddedExerciseRepository")
 
 
+def exercise_id_for(name: str) -> str:
+    return name.strip().lower().replace(" ", "-")
+
+
 def build_embedded_exercise(
     name: str, description: str, materials: list[str], embedding: list[float]
 ):
     Exercise = get_exercise_model()
     EmbeddedExercise = get_embedded_exercise_model()
     exercise = Exercise(
+        exercise_id=exercise_id_for(name),
         name=name,
         description=description,
         muscle_groups=["Back", "Biceps"],
@@ -104,6 +109,7 @@ def embedded_exercise_record(
     return {
         "type": "embedded_exercise",
         "exercise": {
+            "exercise_id": exercise_id_for(name),
             "name": name,
             "description": description,
             "muscle_groups": ["Back", "Biceps"],
@@ -168,6 +174,46 @@ def test_local_embedded_exercise_cache_writes_and_repository_reads_embedded_exer
         "Pull Up Negative",
         "Body Row",
     ]
+    assert [item.exercise.exercise_id for item in loaded_embedded_exercises] == [
+        "pull-up-negative",
+        "body-row",
+    ]
+
+
+def test_local_embedded_exercise_cache_serializes_exercise_id(tmp_path):
+    LocalEmbeddedExerciseCache = get_local_embedded_exercise_cache()
+    cache_path = tmp_path / "embedded_exercises.jsonl"
+
+    LocalEmbeddedExerciseCache(cache_path).write_embedded_exercises(
+        [
+            build_embedded_exercise(
+                "Pull Up Negative",
+                "A controlled eccentric pull-up variation.",
+                ["Bar"],
+                [1.0, 0.0, 0.0],
+            )
+        ],
+        build_metadata(),
+    )
+
+    record = json.loads(cache_path.read_text(encoding="utf-8").splitlines()[1])
+
+    assert record["exercise"]["exercise_id"] == "pull-up-negative"
+
+
+def test_local_embedded_exercise_repository_rejects_old_records_without_exercise_id(
+    tmp_path,
+):
+    LocalEmbeddedExerciseRepository = get_local_embedded_exercise_repository()
+    record = embedded_exercise_record()
+    del record["exercise"]["exercise_id"]
+    cache_path = write_jsonl(
+        tmp_path / "embedded_exercises.jsonl",
+        [metadata_record(), record],
+    )
+
+    with pytest.raises(ValueError, match=r"line 2|exercise_id"):
+        list(LocalEmbeddedExerciseRepository(cache_path).iter_embedded_exercises())
 
 
 def test_local_embedded_exercise_repository_streams_and_logs_only_safe_messages(
@@ -344,6 +390,7 @@ def test_local_embedded_exercise_cache_rejects_non_finite_embedding_values_on_wr
                 {
                     "type": "embedded_exercise",
                     "exercise": {
+                        "exercise_id": "invalid-exercise",
                         "name": "   ",
                         "description": "Invalid exercise.",
                         "muscle_groups": ["Back"],

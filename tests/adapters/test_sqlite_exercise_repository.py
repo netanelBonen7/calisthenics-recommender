@@ -33,6 +33,7 @@ def get_write_exercises_to_sqlite():
 def make_exercise(**overrides):
     Exercise = get_exercise_model()
     payload = {
+        "exercise_id": "pull-up-negative",
         "name": "Pull Up Negative",
         "description": "A controlled eccentric pull-up variation.",
         "muscle_groups": ["Back", "Biceps"],
@@ -50,6 +51,7 @@ def write_malformed_sqlite_row(sqlite_path, **overrides):
             """
             CREATE TABLE exercises (
                 id INTEGER PRIMARY KEY,
+                exercise_id TEXT NOT NULL UNIQUE,
                 name TEXT NOT NULL,
                 description TEXT NOT NULL,
                 muscle_groups TEXT NOT NULL,
@@ -60,6 +62,7 @@ def write_malformed_sqlite_row(sqlite_path, **overrides):
             """
         )
         row = {
+            "exercise_id": "pull-up-negative",
             "name": "Pull Up Negative",
             "description": "A controlled eccentric pull-up variation.",
             "muscle_groups": json.dumps(["Back", "Biceps"]),
@@ -71,6 +74,7 @@ def write_malformed_sqlite_row(sqlite_path, **overrides):
         connection.execute(
             """
             INSERT INTO exercises (
+                exercise_id,
                 name,
                 description,
                 muscle_groups,
@@ -79,6 +83,7 @@ def write_malformed_sqlite_row(sqlite_path, **overrides):
                 categories
             )
             VALUES (
+                :exercise_id,
                 :name,
                 :description,
                 :muscle_groups,
@@ -123,16 +128,19 @@ def test_sqlite_exercise_repository_loads_exercises_in_insert_order(tmp_path):
     sqlite_path = tmp_path / "exercises.sqlite"
     expected_exercises = [
         make_exercise(
+            exercise_id="pull-up",
             name="Pull Up",
             description="A strict vertical pulling movement.",
             materials=["Bar"],
         ),
         make_exercise(
+            exercise_id="paused-pull-up",
             name="Pull Up",
             description="A paused pull-up variation with the same name.",
             materials=["Bar"],
         ),
         make_exercise(
+            exercise_id="body-row",
             name="Body Row",
             description="A horizontal pulling variation.",
             families=["Row"],
@@ -191,6 +199,7 @@ def test_sqlite_exercise_repository_yields_first_valid_row_before_later_row_erro
             """
             CREATE TABLE exercises (
                 id INTEGER PRIMARY KEY,
+                exercise_id TEXT NOT NULL UNIQUE,
                 name TEXT NOT NULL,
                 description TEXT NOT NULL,
                 muscle_groups TEXT NOT NULL,
@@ -202,6 +211,7 @@ def test_sqlite_exercise_repository_yields_first_valid_row_before_later_row_erro
         )
         for row in [
             {
+                "exercise_id": "pull-up-negative",
                 "name": "Pull Up Negative",
                 "description": "A controlled eccentric pull-up variation.",
                 "muscle_groups": json.dumps(["Back", "Biceps"]),
@@ -210,6 +220,7 @@ def test_sqlite_exercise_repository_yields_first_valid_row_before_later_row_erro
                 "categories": json.dumps(["Upper Body Pull"]),
             },
             {
+                "exercise_id": "body-row",
                 "name": "Body Row",
                 "description": "A horizontal pulling variation.",
                 "muscle_groups": json.dumps(["Back", "Biceps"]),
@@ -221,6 +232,7 @@ def test_sqlite_exercise_repository_yields_first_valid_row_before_later_row_erro
             connection.execute(
                 """
                 INSERT INTO exercises (
+                    exercise_id,
                     name,
                     description,
                     muscle_groups,
@@ -229,6 +241,7 @@ def test_sqlite_exercise_repository_yields_first_valid_row_before_later_row_erro
                     categories
                 )
                 VALUES (
+                    :exercise_id,
                     :name,
                     :description,
                     :muscle_groups,
@@ -278,6 +291,47 @@ def test_sqlite_exercise_repository_raises_clear_error_for_invalid_domain_payloa
 
     with pytest.raises(ValueError, match=r"row id 1|name"):
         list(SQLiteExerciseRepository(sqlite_path).iter_exercises())
+
+
+def test_write_exercises_to_sqlite_rejects_duplicate_exercise_ids(tmp_path):
+    write_exercises_to_sqlite = get_write_exercises_to_sqlite()
+    sqlite_path = tmp_path / "exercises.sqlite"
+
+    with pytest.raises(sqlite3.IntegrityError, match="exercise_id|UNIQUE"):
+        write_exercises_to_sqlite(
+            sqlite_path,
+            [
+                make_exercise(exercise_id="duplicate-id", name="Pull Up"),
+                make_exercise(exercise_id="duplicate-id", name="Body Row"),
+            ],
+        )
+
+
+def test_write_exercises_to_sqlite_replaces_legacy_schema_without_exercise_id(tmp_path):
+    SQLiteExerciseRepository = get_sqlite_exercise_repository()
+    write_exercises_to_sqlite = get_write_exercises_to_sqlite()
+    sqlite_path = tmp_path / "exercises.sqlite"
+    with sqlite3.connect(sqlite_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE exercises (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                muscle_groups TEXT NOT NULL,
+                families TEXT NOT NULL,
+                materials TEXT NOT NULL,
+                categories TEXT NOT NULL
+            )
+            """
+        )
+
+    expected_exercise = make_exercise()
+    write_exercises_to_sqlite(sqlite_path, [expected_exercise])
+
+    assert list(SQLiteExerciseRepository(sqlite_path).iter_exercises()) == [
+        expected_exercise
+    ]
 
 
 def test_sqlite_exercise_repository_rejects_non_positive_batch_size(tmp_path):

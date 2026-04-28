@@ -32,6 +32,7 @@ def get_build_embedded_exercises():
 def exercise_named(name: str, materials: list[str] | None = None):
     Exercise = get_exercise_model()
     return Exercise(
+        exercise_id=name.lower().replace(" ", "-"),
         name=name,
         description=f"{name} description.",
         muscle_groups=["Back"],

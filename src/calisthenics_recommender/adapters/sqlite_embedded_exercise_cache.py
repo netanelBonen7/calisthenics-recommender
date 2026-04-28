@@ -41,9 +41,9 @@ class SQLiteEmbeddedExerciseCache:
 
         written_count = 0
         with sqlite3.connect(self._cache_path) as connection:
+            connection.execute("DROP TABLE IF EXISTS embedded_exercises")
+            connection.execute("DROP TABLE IF EXISTS embedding_metadata")
             _ensure_schema(connection)
-            connection.execute("DELETE FROM embedded_exercises")
-            connection.execute("DELETE FROM embedding_metadata")
             _insert_metadata(connection=connection, metadata=metadata)
 
             for row_number, embedded_exercise in enumerate(embedded_exercises, start=1):
@@ -143,6 +143,7 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS embedded_exercises (
             id INTEGER PRIMARY KEY,
+            exercise_id TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL,
             description TEXT NOT NULL,
             muscle_groups TEXT NOT NULL,
@@ -202,6 +203,7 @@ def _insert_embedded_exercise(
     connection.execute(
         """
         INSERT INTO embedded_exercises (
+            exercise_id,
             name,
             description,
             muscle_groups,
@@ -211,6 +213,7 @@ def _insert_embedded_exercise(
             embedding
         )
         VALUES (
+            :exercise_id,
             :name,
             :description,
             :muscle_groups,
@@ -221,6 +224,7 @@ def _insert_embedded_exercise(
         )
         """,
         {
+            "exercise_id": exercise.exercise_id,
             "name": exercise.name,
             "description": exercise.description,
             "muscle_groups": json.dumps(exercise.muscle_groups),
@@ -276,6 +280,7 @@ def _execute_embedded_exercises_query(
             """
             SELECT
                 id,
+                exercise_id,
                 name,
                 description,
                 muscle_groups,
@@ -299,6 +304,7 @@ def _build_embedded_exercise_from_sqlite_row(
 ) -> EmbeddedExercise:
     row_id = row["id"]
     parsed_exercise = {
+        "exercise_id": row["exercise_id"],
         "name": row["name"],
         "description": row["description"],
         "muscle_groups": _parse_json_list_field(

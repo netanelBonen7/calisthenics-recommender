@@ -72,8 +72,13 @@ def get_read_sqlite_metadata():
     return getattr(module, "read_sqlite_embedded_exercise_cache_metadata")
 
 
+def exercise_id_for(name: str) -> str:
+    return name.strip().lower().replace(" ", "-")
+
+
 def make_embedded_exercise(
     *,
+    exercise_id: str | None = None,
     name: str = "Pull Up Negative",
     description: str = "A controlled eccentric pull-up variation.",
     muscle_groups: list[str] | None = None,
@@ -85,6 +90,7 @@ def make_embedded_exercise(
     Exercise = get_exercise_model()
     EmbeddedExercise = get_embedded_exercise_model()
     exercise = Exercise(
+        exercise_id=exercise_id_for(name) if exercise_id is None else exercise_id,
         name=name,
         description=description,
         muscle_groups=["Back", "Biceps"] if muscle_groups is None else muscle_groups,
@@ -124,6 +130,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
         """
         CREATE TABLE embedded_exercises (
             id INTEGER PRIMARY KEY,
+            exercise_id TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL,
             description TEXT NOT NULL,
             muscle_groups TEXT NOT NULL,
@@ -165,6 +172,7 @@ def insert_metadata(connection: sqlite3.Connection, **overrides) -> None:
 
 def insert_embedded_exercise_row(connection: sqlite3.Connection, **overrides) -> None:
     row = {
+        "exercise_id": "pull-up-negative",
         "name": "Pull Up Negative",
         "description": "A controlled eccentric pull-up variation.",
         "muscle_groups": json.dumps(["Back", "Biceps"]),
@@ -174,9 +182,12 @@ def insert_embedded_exercise_row(connection: sqlite3.Connection, **overrides) ->
         "embedding": json.dumps([1.0, 0.0, 0.0]),
     }
     row.update(overrides)
+    if "exercise_id" not in overrides:
+        row["exercise_id"] = exercise_id_for(row["name"])
     connection.execute(
         """
         INSERT INTO embedded_exercises (
+            exercise_id,
             name,
             description,
             muscle_groups,
@@ -186,6 +197,7 @@ def insert_embedded_exercise_row(connection: sqlite3.Connection, **overrides) ->
             embedding
         )
         VALUES (
+            :exercise_id,
             :name,
             :description,
             :muscle_groups,
@@ -245,22 +257,56 @@ def test_sqlite_embedded_exercise_cache_writes_and_reads_metadata(tmp_path):
     assert read_sqlite_metadata(cache_path) == metadata
 
 
+def test_sqlite_embedded_exercise_cache_creates_unique_exercise_id_column(tmp_path):
+    SQLiteEmbeddedExerciseCache = get_sqlite_embedded_exercise_cache()
+    cache_path = tmp_path / "embedded_exercises.sqlite"
+
+    SQLiteEmbeddedExerciseCache(cache_path).write_embedded_exercises(
+        [make_embedded_exercise()],
+        make_metadata(),
+    )
+
+    with sqlite3.connect(cache_path) as connection:
+        columns = [
+            row[1] for row in connection.execute("PRAGMA table_info(embedded_exercises)")
+        ]
+        indexes = [
+            tuple(row) for row in connection.execute("PRAGMA index_list(embedded_exercises)")
+        ]
+
+    assert columns == [
+        "id",
+        "exercise_id",
+        "name",
+        "description",
+        "muscle_groups",
+        "families",
+        "materials",
+        "categories",
+        "embedding",
+    ]
+    assert any(index[2] == 1 for index in indexes)
+
+
 def test_sqlite_embedded_exercise_cache_writes_and_repository_reads_records(tmp_path):
     SQLiteEmbeddedExerciseCache = get_sqlite_embedded_exercise_cache()
     SQLiteEmbeddedExerciseRepository = get_sqlite_embedded_exercise_repository()
     cache_path = tmp_path / "embedded_exercises.sqlite"
     embedded_exercises = [
         make_embedded_exercise(
+            exercise_id="pull-up",
             name="Pull Up",
             description="A strict vertical pulling movement.",
             embedding=[1.0, 0.0, 0.0],
         ),
         make_embedded_exercise(
+            exercise_id="paused-pull-up",
             name="Pull Up",
             description="A paused pull-up variation with the same name.",
             embedding=[0.9, 0.1, 0.0],
         ),
         make_embedded_exercise(
+            exercise_id="body-row",
             name="Body Row",
             description="A horizontal pulling variation.",
             families=["Row"],
@@ -277,6 +323,11 @@ def test_sqlite_embedded_exercise_cache_writes_and_repository_reads_records(tmp_
 
     assert loaded == embedded_exercises
     assert [item.exercise.name for item in loaded] == ["Pull Up", "Pull Up", "Body Row"]
+    assert [item.exercise.exercise_id for item in loaded] == [
+        "pull-up",
+        "paused-pull-up",
+        "body-row",
+    ]
     assert loaded[0].embedding == (1.0, 0.0, 0.0)
     assert isinstance(loaded[0].embedding, tuple)
     assert loaded[2].exercise.materials == ["Bar", "Rings"]
@@ -327,7 +378,11 @@ def test_sqlite_embedded_exercise_cache_replaces_existing_contents(tmp_path):
     cache.write_embedded_exercises(
         [
             make_embedded_exercise(name="Pull Up", embedding=[1.0, 0.0, 0.0]),
-            make_embedded_exercise(name="Body Row", embedding=[0.8, 0.2, 0.0]),
+            make_embedded_exercise(
+                exercise_id="body-row",
+                name="Body Row",
+                embedding=[0.8, 0.2, 0.0],
+            ),
         ],
         make_metadata(embedding_model="first-model"),
     )
@@ -341,6 +396,39 @@ def test_sqlite_embedded_exercise_cache_replaces_existing_contents(tmp_path):
 
     assert read_sqlite_metadata(cache_path) == replacement_metadata
     assert [item.exercise.name for item in loaded] == ["Dip"]
+
+
+def test_sqlite_embedded_exercise_cache_replaces_legacy_schema_without_exercise_id(
+    tmp_path,
+):
+    SQLiteEmbeddedExerciseCache = get_sqlite_embedded_exercise_cache()
+    SQLiteEmbeddedExerciseRepository = get_sqlite_embedded_exercise_repository()
+    cache_path = tmp_path / "embedded_exercises.sqlite"
+    with sqlite3.connect(cache_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE embedded_exercises (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                muscle_groups TEXT NOT NULL,
+                families TEXT NOT NULL,
+                materials TEXT NOT NULL,
+                categories TEXT NOT NULL,
+                embedding TEXT NOT NULL
+            )
+            """
+        )
+
+    expected_exercise = make_embedded_exercise()
+    SQLiteEmbeddedExerciseCache(cache_path).write_embedded_exercises(
+        [expected_exercise],
+        make_metadata(),
+    )
+
+    assert list(SQLiteEmbeddedExerciseRepository(cache_path).iter_embedded_exercises()) == [
+        expected_exercise
+    ]
 
 
 def test_sqlite_embedded_exercise_repository_rejects_non_positive_batch_size(tmp_path):
@@ -382,6 +470,29 @@ def test_sqlite_embedded_exercise_cache_rejects_dimension_mismatch_on_write(tmp_
             tmp_path / "embedded.sqlite"
         ).write_embedded_exercises(
             [make_embedded_exercise(embedding=[1.0, 0.0])],
+            make_metadata(),
+        )
+
+
+def test_sqlite_embedded_exercise_cache_rejects_duplicate_exercise_ids(tmp_path):
+    SQLiteEmbeddedExerciseCache = get_sqlite_embedded_exercise_cache()
+
+    with pytest.raises(sqlite3.IntegrityError, match="exercise_id|UNIQUE"):
+        SQLiteEmbeddedExerciseCache(
+            tmp_path / "embedded.sqlite"
+        ).write_embedded_exercises(
+            [
+                make_embedded_exercise(
+                    exercise_id="duplicate-id",
+                    name="Pull Up",
+                    embedding=[1.0, 0.0, 0.0],
+                ),
+                make_embedded_exercise(
+                    exercise_id="duplicate-id",
+                    name="Body Row",
+                    embedding=[0.8, 0.2, 0.0],
+                ),
+            ],
             make_metadata(),
         )
 

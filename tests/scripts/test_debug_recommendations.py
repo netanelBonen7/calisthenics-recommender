@@ -40,10 +40,15 @@ def load_debug_recommendations_module():
 
 
 def write_exercise_csv(path: Path, rows: list[dict[str, str]]) -> None:
+    normalized_rows = [
+        {"exercise_id": row["name"].lower().replace(" ", "-"), **row}
+        for row in rows
+    ]
     with path.open("w", newline="", encoding="utf-8") as csv_file:
         writer = csv.DictWriter(
             csv_file,
             fieldnames=[
+                "exercise_id",
                 "name",
                 "description",
                 "muscle_groups",
@@ -53,7 +58,7 @@ def write_exercise_csv(path: Path, rows: list[dict[str, str]]) -> None:
             ],
         )
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(normalized_rows)
 
 
 def build_cache(csv_path: Path, cache_path: Path) -> None:
@@ -152,6 +157,7 @@ def make_embedded_exercise(
     embedding: list[float],
 ) -> EmbeddedExercise:
     exercise = Exercise(
+        exercise_id=name.lower().replace(" ", "-"),
         name=name,
         description=description,
         muscle_groups=["Back", "Biceps"],
@@ -168,6 +174,7 @@ def test_debug_recommendations_main_prints_query_text_duplicate_matches_and_miss
     module = load_debug_recommendations_module()
     csv_path = tmp_path / "exercises.csv"
     first_pull_up = Exercise(
+        exercise_id="pull-up",
         name="Pull Up",
         description="A strict vertical pulling movement on a bar.",
         muscle_groups=["Back", "Biceps"],
@@ -176,6 +183,7 @@ def test_debug_recommendations_main_prints_query_text_duplicate_matches_and_miss
         categories=["Upper Body Pull"],
     )
     second_pull_up = Exercise(
+        exercise_id="paused-pull-up",
         name="Pull Up",
         description="A pull-up variation with a paused top position.",
         muscle_groups=["Back", "Biceps"],
@@ -187,6 +195,7 @@ def test_debug_recommendations_main_prints_query_text_duplicate_matches_and_miss
         csv_path,
         [
             {
+                "exercise_id": first_pull_up.exercise_id,
                 "name": first_pull_up.name,
                 "description": first_pull_up.description,
                 "muscle_groups": "Back;Biceps",
@@ -195,6 +204,7 @@ def test_debug_recommendations_main_prints_query_text_duplicate_matches_and_miss
                 "categories": "Upper Body Pull",
             },
             {
+                "exercise_id": second_pull_up.exercise_id,
                 "name": second_pull_up.name,
                 "description": second_pull_up.description,
                 "muscle_groups": "Back;Biceps",
@@ -526,6 +536,7 @@ def test_debug_recommendations_main_uses_configured_raw_csv_for_exercise_texts(
     csv_path = tmp_path / "exercises.csv"
     config_path = tmp_path / "debug.toml"
     exercise = Exercise(
+        exercise_id="pull-up",
         name="Pull Up",
         description="A strict vertical pulling movement on a bar.",
         muscle_groups=["Back", "Biceps"],
@@ -537,6 +548,7 @@ def test_debug_recommendations_main_uses_configured_raw_csv_for_exercise_texts(
         csv_path,
         [
             {
+                "exercise_id": exercise.exercise_id,
                 "name": exercise.name,
                 "description": exercise.description,
                 "muscle_groups": "Back;Biceps",
@@ -574,6 +586,7 @@ def test_debug_recommendations_main_uses_configured_raw_sqlite_for_exercise_text
     sqlite_path = tmp_path / "exercises.sqlite"
     config_path = tmp_path / "debug.toml"
     exercise = Exercise(
+        exercise_id="pull-up",
         name="Pull Up",
         description="A strict vertical pulling movement on a bar.",
         muscle_groups=["Back", "Biceps"],

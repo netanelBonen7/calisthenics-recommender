@@ -11,6 +11,7 @@ def get_exercise_model():
 
 def valid_exercise_data():
     return {
+        "exercise_id": "pull-up-negative",
         "name": "Pull Up Negative",
         "description": "A controlled eccentric pull-up variation for building pulling strength.",
         "muscle_groups": ["Back", "Biceps"],
@@ -30,12 +31,50 @@ def test_exercise_can_be_created_with_valid_mvp_fields():
 
 @pytest.mark.parametrize(
     "missing_field",
-    ["name", "description", "muscle_groups", "families", "materials", "categories"],
+    [
+        "exercise_id",
+        "name",
+        "description",
+        "muscle_groups",
+        "families",
+        "materials",
+        "categories",
+    ],
 )
 def test_exercise_missing_required_fields_raise_validation_error(missing_field):
     Exercise = get_exercise_model()
     payload = valid_exercise_data()
     payload.pop(missing_field)
+
+    with pytest.raises(ValidationError):
+        Exercise(**payload)
+
+
+@pytest.mark.parametrize(
+    "bad_exercise_id",
+    [
+        "Pull-Up-Negative",
+        "pull_up_negative",
+        "pull up negative",
+        "-pull-up-negative",
+        "pull-up-negative-",
+        "pull--up-negative",
+        "",
+    ],
+)
+def test_exercise_rejects_invalid_exercise_ids(bad_exercise_id):
+    Exercise = get_exercise_model()
+    payload = valid_exercise_data()
+    payload["exercise_id"] = bad_exercise_id
+
+    with pytest.raises(ValidationError):
+        Exercise(**payload)
+
+
+def test_exercise_rejects_non_string_exercise_id():
+    Exercise = get_exercise_model()
+    payload = valid_exercise_data()
+    payload["exercise_id"] = 123
 
     with pytest.raises(ValidationError):
         Exercise(**payload)

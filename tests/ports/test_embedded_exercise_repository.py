@@ -24,6 +24,7 @@ def valid_embedded_exercise():
     Exercise = get_exercise_model()
     EmbeddedExercise = get_embedded_exercise_model()
     exercise = Exercise(
+        exercise_id="pull-up-negative",
         name="Pull Up Negative",
         description="A controlled eccentric pull-up variation for building pulling strength.",
         muscle_groups=["Back", "Biceps"],

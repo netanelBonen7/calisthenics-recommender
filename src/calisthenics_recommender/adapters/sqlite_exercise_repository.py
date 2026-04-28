@@ -42,6 +42,7 @@ class SQLiteExerciseRepository:
                 """
                 SELECT
                     id,
+                    exercise_id,
                     name,
                     description,
                     muscle_groups,
@@ -77,8 +78,8 @@ def write_exercises_to_sqlite(
 
     written_count = 0
     with sqlite3.connect(normalized_sqlite_path) as connection:
+        connection.execute("DROP TABLE IF EXISTS exercises")
         _ensure_schema(connection)
-        connection.execute("DELETE FROM exercises")
 
         for exercise in exercises:
             _insert_exercise(connection, exercise)
@@ -96,6 +97,7 @@ def _ensure_schema(connection: sqlite3.Connection) -> None:
         """
         CREATE TABLE IF NOT EXISTS exercises (
             id INTEGER PRIMARY KEY,
+            exercise_id TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL,
             description TEXT NOT NULL,
             muscle_groups TEXT NOT NULL,
@@ -117,6 +119,7 @@ def _insert_exercise(connection: sqlite3.Connection, exercise: Exercise) -> None
     connection.execute(
         """
         INSERT INTO exercises (
+            exercise_id,
             name,
             description,
             muscle_groups,
@@ -125,6 +128,7 @@ def _insert_exercise(connection: sqlite3.Connection, exercise: Exercise) -> None
             categories
         )
         VALUES (
+            :exercise_id,
             :name,
             :description,
             :muscle_groups,
@@ -134,6 +138,7 @@ def _insert_exercise(connection: sqlite3.Connection, exercise: Exercise) -> None
         )
         """,
         {
+            "exercise_id": exercise.exercise_id,
             "name": exercise.name,
             "description": exercise.description,
             "muscle_groups": json.dumps(exercise.muscle_groups),
@@ -147,6 +152,7 @@ def _insert_exercise(connection: sqlite3.Connection, exercise: Exercise) -> None
 def _build_exercise_from_sqlite_row(row: sqlite3.Row) -> Exercise:
     row_id = row["id"]
     parsed_row = {
+        "exercise_id": row["exercise_id"],
         "name": row["name"],
         "description": row["description"],
         "muscle_groups": _parse_json_list_field(

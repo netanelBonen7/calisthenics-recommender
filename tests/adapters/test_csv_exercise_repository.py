@@ -6,6 +6,7 @@ import pytest
 
 
 REQUIRED_HEADERS = [
+    "exercise_id",
     "name",
     "description",
     "muscle_groups",
@@ -13,6 +14,10 @@ REQUIRED_HEADERS = [
     "materials",
     "categories",
 ]
+
+
+def exercise_id_for(name: str) -> str:
+    return name.strip().lower().replace(" ", "-")
 
 
 def get_exercise_model():
@@ -32,10 +37,16 @@ def get_csv_exercise_repository():
 
 def write_csv(tmp_path, rows, headers=REQUIRED_HEADERS):
     csv_path = tmp_path / "exercises.csv"
+    normalized_rows = [
+        {"exercise_id": exercise_id_for(row["name"]), **row}
+        if "name" in row
+        else row
+        for row in rows
+    ]
     with csv_path.open("w", newline="", encoding="utf-8") as csv_file:
         writer = DictWriter(csv_file, fieldnames=headers)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(normalized_rows)
     return csv_path
 
 
@@ -88,6 +99,7 @@ def test_csv_exercise_repository_accepts_string_csv_path(tmp_path):
     exercises = list(repository.iter_exercises())
 
     assert len(exercises) == 1
+    assert exercises[0].exercise_id == "pull-up-negative"
     assert exercises[0].name == "Pull Up Negative"
 
 
@@ -122,6 +134,7 @@ def test_csv_exercise_repository_loads_exercises_and_parses_list_fields(tmp_path
 
     assert exercises == [
         Exercise(
+            exercise_id="pull-up-negative",
             name="Pull Up Negative",
             description="Controlled eccentric pulling work.",
             muscle_groups=["Back", "Biceps"],
@@ -130,6 +143,7 @@ def test_csv_exercise_repository_loads_exercises_and_parses_list_fields(tmp_path
             categories=["Upper Body Pull", "Strength"],
         ),
         Exercise(
+            exercise_id="body-row",
             name="Body Row",
             description="Horizontal pulling variation.",
             muscle_groups=["Back", "Rear Delts"],
@@ -149,6 +163,7 @@ def test_csv_exercise_repository_parses_json_list_cells_from_real_dataset_format
         tmp_path,
         [
             {
+                "exercise_id": "360-pull",
                 "name": "360° Pull",
                 "description": "A dynamic explosive movement rotating around the bar.",
                 "muscle_groups": '["Back", "Shoulders", "Biceps", "Core"]',
@@ -165,6 +180,7 @@ def test_csv_exercise_repository_parses_json_list_cells_from_real_dataset_format
 
     assert exercises == [
         Exercise(
+            exercise_id="360-pull",
             name="360° Pull",
             description="A dynamic explosive movement rotating around the bar.",
             muscle_groups=["Back", "Shoulders", "Biceps", "Core"],
@@ -220,6 +236,63 @@ def test_csv_exercise_repository_raises_clear_error_for_missing_required_headers
         list(repository.iter_exercises())
 
 
+def test_csv_exercise_repository_raises_clear_error_for_missing_exercise_id_header(
+    tmp_path,
+):
+    CsvExerciseRepository = get_csv_exercise_repository()
+    csv_path = write_csv(
+        tmp_path,
+        rows=[],
+        headers=[
+            "name",
+            "description",
+            "muscle_groups",
+            "families",
+            "materials",
+            "categories",
+        ],
+    )
+
+    repository = CsvExerciseRepository(csv_path)
+
+    with pytest.raises(ValueError, match="Missing required headers|exercise_id"):
+        list(repository.iter_exercises())
+
+
+def test_csv_exercise_repository_raises_clear_error_for_duplicate_exercise_id(
+    tmp_path,
+):
+    CsvExerciseRepository = get_csv_exercise_repository()
+    csv_path = write_csv(
+        tmp_path,
+        [
+            {
+                "exercise_id": "pull-up-negative",
+                "name": "Pull Up Negative",
+                "description": "Controlled eccentric pulling work.",
+                "muscle_groups": "Back; Biceps",
+                "families": "Pull-up",
+                "materials": "Bar",
+                "categories": "Upper Body Pull",
+            },
+            {
+                "exercise_id": "pull-up-negative",
+                "name": "Negative Pull Up",
+                "description": "Same stable id by mistake.",
+                "muscle_groups": "Back; Biceps",
+                "families": "Pull-up",
+                "materials": "Bar",
+                "categories": "Upper Body Pull",
+            },
+        ],
+    )
+
+    repository = CsvExerciseRepository(csv_path)
+
+    with pytest.raises(ValueError, match=r"Duplicate exercise_id|row 3|row 2"):
+        list(repository.iter_exercises())
+
+
 def test_csv_exercise_repository_raises_clear_error_for_invalid_name_row(tmp_path):
     CsvExerciseRepository = get_csv_exercise_repository()
     csv_path = write_csv(
@@ -248,8 +321,8 @@ def test_csv_exercise_repository_raises_clear_error_for_truncated_list_field(tmp
         tmp_path,
         "\n".join(
             [
-                "name,description,muscle_groups,families,materials,categories",
-                "Body Row,Horizontal pulling variation.,Back; Biceps,Row,Bar",
+                "exercise_id,name,description,muscle_groups,families,materials,categories",
+                "body-row,Body Row,Horizontal pulling variation.,Back; Biceps,Row,Bar",
             ]
         ),
     )

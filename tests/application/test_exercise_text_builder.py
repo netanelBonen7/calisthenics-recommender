@@ -17,6 +17,7 @@ def get_build_exercise_text():
 def valid_exercise():
     Exercise = get_exercise_model()
     return Exercise(
+        exercise_id="pull-up-negative",
         name="Pull Up Negative",
         description="A controlled eccentric pull-up variation for building pulling strength.",
         muscle_groups=["Back", "Biceps"],

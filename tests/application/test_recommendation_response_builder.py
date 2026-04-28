@@ -45,6 +45,7 @@ def valid_user_request():
 def exercise_named(name: str, *, families: list[str], categories: list[str], materials: list[str]):
     Exercise = get_exercise_model()
     return Exercise(
+        exercise_id=name.lower().replace(" ", "-"),
         name=name,
         description=f"{name} description.",
         muscle_groups=["Back"],

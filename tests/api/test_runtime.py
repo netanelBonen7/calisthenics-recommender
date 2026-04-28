@@ -31,6 +31,7 @@ def exercise_named(
     materials: list[str],
 ) -> Exercise:
     return Exercise(
+        exercise_id=name.lower().replace(" ", "-"),
         name=name,
         description=description,
         muscle_groups=["Back"],

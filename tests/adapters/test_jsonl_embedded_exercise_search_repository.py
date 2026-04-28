@@ -68,14 +68,20 @@ def get_exercise_matches_equipment():
     return getattr(module, "exercise_matches_equipment")
 
 
+def exercise_id_for(name: str) -> str:
+    return name.strip().lower().replace(" ", "-")
+
+
 def exercise_named(
     name: str,
     *,
     materials: list[str],
     embedding_family: str = "Pull-up",
+    exercise_id: str | None = None,
 ):
     Exercise = get_exercise_model()
     return Exercise(
+        exercise_id=exercise_id_for(name) if exercise_id is None else exercise_id,
         name=name,
         description=f"{name} description.",
         muscle_groups=["Back"],
@@ -90,12 +96,14 @@ def embedded_exercise_named(
     embedding: list[float],
     *,
     materials: list[str] | None = None,
+    exercise_id: str | None = None,
 ):
     EmbeddedExercise = get_embedded_exercise_model()
     return EmbeddedExercise(
         exercise=exercise_named(
             name,
             materials=["Bar"] if materials is None else materials,
+            exercise_id=exercise_id,
         ),
         embedding=embedding,
     )

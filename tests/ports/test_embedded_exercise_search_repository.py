@@ -26,6 +26,7 @@ def valid_search_result():
     Exercise = get_exercise_model()
     EmbeddedExerciseSearchResult = get_embedded_exercise_search_result_model()
     exercise = Exercise(
+        exercise_id="pull-up-negative",
         name="Pull Up Negative",
         description="A controlled eccentric pull-up variation for building pulling strength.",
         muscle_groups=["Back", "Biceps"],

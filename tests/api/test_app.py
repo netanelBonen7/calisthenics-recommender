@@ -28,6 +28,7 @@ def exercise_named(
     materials: list[str],
 ) -> Exercise:
     return Exercise(
+        exercise_id=name.lower().replace(" ", "-"),
         name=name,
         description=description,
         muscle_groups=["Back"],
@@ -166,6 +167,7 @@ def test_recommend_endpoint_returns_envelope_json_using_injected_dependencies(tm
             },
         ]
     }
+    assert "exercise_id" not in response.json()["recommendations"][0]
     expected_query_text = build_query_text(
         UserRequest(
             target_family=payload["target_family"],

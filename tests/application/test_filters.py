@@ -20,6 +20,7 @@ def get_filter_exercises_by_equipment():
 def exercise_with_materials(name: str, materials: list[str]):
     Exercise = get_exercise_model()
     return Exercise(
+        exercise_id=name.lower().replace(" ", "-"),
         name=name,
         description=f"{name} description.",
         muscle_groups=["Back"],

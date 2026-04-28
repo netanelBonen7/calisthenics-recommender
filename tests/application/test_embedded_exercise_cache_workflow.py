@@ -32,6 +32,7 @@ def get_build_embedded_exercise_cache():
 def exercise_named(name: str):
     Exercise = get_exercise_model()
     return Exercise(
+        exercise_id=name.lower().replace(" ", "-"),
         name=name,
         description=f"{name} description.",
         muscle_groups=["Back"],

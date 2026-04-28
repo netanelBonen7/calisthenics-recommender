@@ -15,6 +15,7 @@ from calisthenics_recommender.domain.exercise import Exercise
 logger = logging.getLogger(__name__)
 
 _REQUIRED_HEADERS = (
+    "exercise_id",
     "name",
     "description",
     "muscle_groups",
@@ -33,13 +34,23 @@ class CsvExerciseRepository:
     def iter_exercises(self) -> Iterable[Exercise]:
         logger.info("Starting exercise CSV scan from path %s", self._csv_path)
 
-        with self._csv_path.open("r", newline="", encoding="utf-8") as csv_file:
+        with self._csv_path.open("r", newline="", encoding="utf-8-sig") as csv_file:
             reader = csv.DictReader(csv_file)
             self._validate_headers(reader.fieldnames)
             exercise_count = 0
+            seen_exercise_ids: dict[str, int] = {}
 
             for row_number, row in enumerate(reader, start=2):
-                yield self._build_exercise(row_number, row)
+                exercise = self._build_exercise(row_number, row)
+                previous_row_number = seen_exercise_ids.get(exercise.exercise_id)
+                if previous_row_number is not None:
+                    raise ValueError(
+                        "Duplicate exercise_id "
+                        f"{exercise.exercise_id!r} at row {row_number}; "
+                        f"first seen at row {previous_row_number}"
+                    )
+                seen_exercise_ids[exercise.exercise_id] = row_number
+                yield exercise
                 exercise_count += 1
 
         logger.info(
@@ -59,6 +70,7 @@ class CsvExerciseRepository:
 
     def _build_exercise(self, row_number: int, row: dict[str, str | None]) -> Exercise:
         parsed_row = {
+            "exercise_id": row.get("exercise_id"),
             "name": row.get("name"),
             "description": row.get("description"),
             "muscle_groups": self._parse_list_field(
