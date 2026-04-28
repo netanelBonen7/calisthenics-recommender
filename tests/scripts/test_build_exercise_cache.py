@@ -394,7 +394,7 @@ def test_build_exercise_cache_main_explicit_flags_override_config_values(tmp_pat
         embedding_model="configured-model",
         embedding_dimension=8,
         text_prefix="configured: ",
-        text_builder_version="configured-v1",
+        text_builder_version="v1",
     )
 
     exit_code = module.main(

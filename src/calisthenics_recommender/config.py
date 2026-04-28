@@ -12,6 +12,8 @@ _SUPPORTED_EMBEDDING_PROVIDERS = (
     "local-deterministic",
     "sentence-transformer",
 )
+_SUPPORTED_QUERY_BUILDER_STRATEGIES = ("v1",)
+_SUPPORTED_EXERCISE_TEXT_BUILDER_STRATEGIES = ("v1",)
 
 
 class ConfigError(ValueError):
@@ -41,21 +43,38 @@ class EmbeddingConfig:
 
 
 @dataclass(frozen=True)
+class QueryBuilderConfig:
+    strategy: Literal["v1"] = "v1"
+
+
+@dataclass(frozen=True)
+class ExerciseTextBuilderConfig:
+    strategy: Literal["v1"] = "v1"
+
+
+@dataclass(frozen=True)
 class RecommenderConfig:
     raw_exercises: RawExercisesConfig | None = None
     embedded_cache: EmbeddedCacheConfig | None = None
     embedding: EmbeddingConfig | None = None
+    query_builder: QueryBuilderConfig = QueryBuilderConfig()
+    exercise_text_builder: ExerciseTextBuilderConfig = ExerciseTextBuilderConfig()
 
 
 @dataclass(frozen=True)
 class ApiRuntimeConfig:
     embedded_cache: EmbeddedCacheConfig
     embedding: EmbeddingConfig
+    query_builder: QueryBuilderConfig
 
 
 def load_recommender_config(config_path: Path | str) -> RecommenderConfig:
     normalized_config_path = Path(config_path)
     config_data = _load_config_data(normalized_config_path)
+    embedding_config = _read_optional_embedding_config(
+        config_data,
+        config_path=normalized_config_path,
+    )
 
     return RecommenderConfig(
         raw_exercises=_read_optional_raw_exercises_config(
@@ -66,9 +85,15 @@ def load_recommender_config(config_path: Path | str) -> RecommenderConfig:
             config_data,
             config_path=normalized_config_path,
         ),
-        embedding=_read_optional_embedding_config(
+        embedding=embedding_config,
+        query_builder=_read_query_builder_config(
             config_data,
             config_path=normalized_config_path,
+        ),
+        exercise_text_builder=_read_exercise_text_builder_config(
+            config_data,
+            config_path=normalized_config_path,
+            embedding_config=embedding_config,
         ),
     )
 
@@ -89,6 +114,7 @@ def load_api_runtime_config(config_path: Path | str) -> ApiRuntimeConfig:
     return ApiRuntimeConfig(
         embedded_cache=config.embedded_cache,
         embedding=config.embedding,
+        query_builder=config.query_builder,
     )
 
 
@@ -221,6 +247,67 @@ def _read_optional_embedding_config(
             config_path=config_path,
         ),
     )
+
+
+def _read_query_builder_config(
+    config_data: dict[str, Any],
+    *,
+    config_path: Path,
+) -> QueryBuilderConfig:
+    section = _read_optional_table(
+        config_data,
+        section_name="query_builder",
+        config_path=config_path,
+    )
+    if section is None:
+        return QueryBuilderConfig()
+
+    return QueryBuilderConfig(
+        strategy=_require_literal_string(
+            section,
+            field_name="[query_builder].strategy",
+            config_path=config_path,
+            supported_values=_SUPPORTED_QUERY_BUILDER_STRATEGIES,
+        )
+    )
+
+
+def _read_exercise_text_builder_config(
+    config_data: dict[str, Any],
+    *,
+    config_path: Path,
+    embedding_config: EmbeddingConfig | None,
+) -> ExerciseTextBuilderConfig:
+    section = _read_optional_table(
+        config_data,
+        section_name="exercise_text_builder",
+        config_path=config_path,
+    )
+    if section is not None:
+        return ExerciseTextBuilderConfig(
+            strategy=_require_literal_string(
+                section,
+                field_name="[exercise_text_builder].strategy",
+                config_path=config_path,
+                supported_values=_SUPPORTED_EXERCISE_TEXT_BUILDER_STRATEGIES,
+            )
+        )
+
+    legacy_strategy = (
+        None if embedding_config is None else embedding_config.text_builder_version
+    )
+    if legacy_strategy is None:
+        return ExerciseTextBuilderConfig()
+
+    if legacy_strategy not in _SUPPORTED_EXERCISE_TEXT_BUILDER_STRATEGIES:
+        supported_values_text = ", ".join(_SUPPORTED_EXERCISE_TEXT_BUILDER_STRATEGIES)
+        raise ConfigError(
+            "Invalid config at "
+            f"{config_path}: [embedding].text_builder_version must be one of: "
+            f"{supported_values_text}"
+        )
+
+    return ExerciseTextBuilderConfig(strategy=legacy_strategy)
 
 
 def _read_optional_table(

@@ -5,14 +5,14 @@ from dataclasses import dataclass
 from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
     EmbeddedExerciseCacheMetadata,
 )
-from calisthenics_recommender.application.exercise_text_builder import (
-    build_exercise_text,
-)
 from calisthenics_recommender.domain.embedded_exercise import EmbeddedExercise
 from calisthenics_recommender.ports.embedded_exercise_cache_updater import (
     EmbeddedExerciseCacheUpdater,
 )
 from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
+from calisthenics_recommender.ports.exercise_text_builder import (
+    ExerciseTextBuilder,
+)
 from calisthenics_recommender.ports.exercise_lookup_repository import (
     ExerciseLookupRepository,
 )
@@ -36,6 +36,7 @@ class ProcessPendingEmbeddingUpdatesWorkflow:
         pending_update_repository: PendingEmbeddingUpdateRepository,
         exercise_repository: ExerciseLookupRepository,
         embedding_provider: EmbeddingProvider,
+        exercise_text_builder: ExerciseTextBuilder,
         cache_updater: EmbeddedExerciseCacheUpdater,
         expected_metadata: EmbeddedExerciseCacheMetadata,
         actual_metadata: EmbeddedExerciseCacheMetadata,
@@ -43,6 +44,7 @@ class ProcessPendingEmbeddingUpdatesWorkflow:
         self._pending_update_repository = pending_update_repository
         self._exercise_repository = exercise_repository
         self._embedding_provider = embedding_provider
+        self._exercise_text_builder = exercise_text_builder
         self._cache_updater = cache_updater
         self._expected_metadata = expected_metadata
         self._actual_metadata = actual_metadata
@@ -69,7 +71,7 @@ class ProcessPendingEmbeddingUpdatesWorkflow:
                     if exercise is None:
                         self._cache_updater.delete_embedded_exercise(update.exercise_id)
                     else:
-                        exercise_text = build_exercise_text(exercise)
+                        exercise_text = self._exercise_text_builder.build(exercise)
                         embedding = self._embedding_provider.embed(exercise_text)
                         self._cache_updater.upsert_embedded_exercise(
                             EmbeddedExercise(exercise=exercise, embedding=embedding),

@@ -18,12 +18,14 @@ from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
 from calisthenics_recommender.ports.embedded_exercise_search_repository import (
     EmbeddedExerciseSearchRepository,
 )
+from calisthenics_recommender.ports.query_text_builder import QueryTextBuilder
 
 
 def create_app(
     *,
     embedded_exercise_search_repository: EmbeddedExerciseSearchRepository,
     embedding_provider: EmbeddingProvider,
+    query_text_builder: QueryTextBuilder,
 ) -> FastAPI:
     app = FastAPI()
 
@@ -43,6 +45,7 @@ def create_app(
             user_request=user_request,
             embedded_exercise_search_repository=embedded_exercise_search_repository,
             embedding_provider=embedding_provider,
+            query_text_builder=query_text_builder,
             limit=request.limit,
         )
         return RecommendResponse(

@@ -221,7 +221,7 @@ First use may download model files through Sentence Transformers. No OpenAI API 
 
 ## Configuration
 
-`build-exercise-cache`, `process-pending-embedding-updates`, `demo-recommend`, `debug-recommendations`, and the FastAPI runtime can use TOML config for backend and embedding settings.
+`build-exercise-cache`, `process-pending-embedding-updates`, `demo-recommend`, `debug-recommendations`, and the FastAPI runtime can use TOML config for backend, embedding, and text-builder strategy settings.
 
 Example config:
 
@@ -240,11 +240,21 @@ model = "Qwen/Qwen3-Embedding-0.6B"
 query_prefix = ""
 text_prefix = ""
 text_builder_version = "v1"
+
+[query_builder]
+strategy = "v1"
+
+[exercise_text_builder]
+strategy = "v1"
 ```
 
 For CSV raw input, use `backend = "csv"` with `csv_path`.
 
 For JSONL embedded cache, use `backend = "jsonl"` under `[embedded_cache]`.
+
+`[query_builder]` controls runtime query text generation. `[exercise_text_builder]` controls exercise text generation for cached embeddings and pending-update rebuilding.
+
+Legacy configs can keep using `[embedding].text_builder_version` as a fallback for the exercise text builder strategy. If both are present, `[exercise_text_builder].strategy` wins.
 
 Config paths are resolved relative to the TOML file. Explicit CLI flags override matching config values where supported.
 
@@ -428,6 +438,12 @@ model = "fake-hash-v1"
 dimension = 4
 query_prefix = ""
 text_builder_version = "v1"
+
+[query_builder]
+strategy = "v1"
+
+[exercise_text_builder]
+strategy = "v1"
 ```
 
 Start the Dockerized FastAPI runtime:

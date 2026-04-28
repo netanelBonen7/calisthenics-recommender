@@ -10,6 +10,7 @@ from calisthenics_recommender.application.embedded_exercise_cache_workflow impor
 from calisthenics_recommender.config import (
     EmbeddedCacheConfig,
     EmbeddingConfig,
+    ExerciseTextBuilderConfig,
     RawExercisesConfig,
     RecommenderConfig,
     load_recommender_config,
@@ -17,6 +18,7 @@ from calisthenics_recommender.config import (
 from calisthenics_recommender.wiring import (
     build_cache_embedding_provider_and_metadata,
     build_embedded_exercise_cache_writer,
+    build_exercise_text_builder,
     build_exercise_repository,
 )
 
@@ -68,12 +70,13 @@ def build_argument_parser(
         default="" if embedding_config is None else embedding_config.text_prefix,
     )
     parser.add_argument(
+        "--exercise-text-builder-strategy",
+        choices=("v1",),
+        default=None,
+    )
+    parser.add_argument(
         "--text-builder-version",
-        default=(
-            None
-            if embedding_config is None
-            else embedding_config.text_builder_version
-        ),
+        default=None,
     )
     return parser
 
@@ -86,16 +89,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_exercises_config = _resolve_raw_exercises_config(args, config)
     embedded_cache_config = _resolve_embedded_cache_config(args, config)
     embedding_config = _resolve_embedding_config(args, config)
+    exercise_text_builder_config = _resolve_exercise_text_builder_config(args, config)
 
     embedding_provider, metadata = build_cache_embedding_provider_and_metadata(
-        embedding_config
+        embedding_config,
+        exercise_text_builder_config,
     )
     exercise_repository = build_exercise_repository(raw_exercises_config)
     cache_writer = build_embedded_exercise_cache_writer(embedded_cache_config)
+    exercise_text_builder = build_exercise_text_builder(exercise_text_builder_config)
 
     build_embedded_exercise_cache(
         exercise_repository=exercise_repository,
         embedding_provider=embedding_provider,
+        exercise_text_builder=exercise_text_builder,
         cache_writer=cache_writer,
         metadata=metadata,
     )
@@ -151,10 +158,6 @@ def _resolve_embedding_config(
     args: argparse.Namespace,
     config: RecommenderConfig | None,
 ) -> EmbeddingConfig:
-    text_builder_version = args.text_builder_version
-    if text_builder_version is None:
-        raise ValueError("--text-builder-version is required")
-
     return EmbeddingConfig(
         provider=args.embedding_provider,
         model=args.embedding_model,
@@ -165,8 +168,25 @@ def _resolve_embedding_config(
             else config.embedding.query_prefix
         ),
         text_prefix=args.text_prefix,
-        text_builder_version=text_builder_version,
+        text_builder_version=(
+            None
+            if config is None or config.embedding is None
+            else config.embedding.text_builder_version
+        ),
     )
+
+
+def _resolve_exercise_text_builder_config(
+    args: argparse.Namespace,
+    config: RecommenderConfig | None,
+) -> ExerciseTextBuilderConfig:
+    if args.exercise_text_builder_strategy is not None:
+        return ExerciseTextBuilderConfig(strategy=args.exercise_text_builder_strategy)
+    if args.text_builder_version is not None:
+        return ExerciseTextBuilderConfig(strategy=args.text_builder_version)
+    if config is not None:
+        return config.exercise_text_builder
+    return ExerciseTextBuilderConfig()
 
 
 if __name__ == "__main__":

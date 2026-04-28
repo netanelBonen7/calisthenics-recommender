@@ -10,6 +10,7 @@ from calisthenics_recommender.application.recommend_exercises import (
 from calisthenics_recommender.config import (
     EmbeddedCacheConfig,
     EmbeddingConfig,
+    QueryBuilderConfig,
     RecommenderConfig,
     load_recommender_config,
 )
@@ -17,6 +18,7 @@ from calisthenics_recommender.domain.recommendation import Recommendation
 from calisthenics_recommender.domain.user_request import UserRequest
 from calisthenics_recommender.wiring import (
     build_embedded_exercise_search_repository,
+    build_query_text_builder,
     build_query_embedding_provider,
     read_embedded_cache_metadata,
 )
@@ -57,6 +59,11 @@ def build_argument_parser(
     parser.add_argument("--current-level", required=True)
     parser.add_argument("--available-equipment", required=True, action="append")
     parser.add_argument(
+        "--query-builder-strategy",
+        choices=("v1",),
+        default=None,
+    )
+    parser.add_argument(
         "--query-prefix",
         default="" if embedding_config is None else embedding_config.query_prefix,
     )
@@ -75,6 +82,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         embedding_config=_resolve_embedding_config(args),
         metadata=metadata,
     )
+    query_text_builder = build_query_text_builder(
+        _resolve_query_builder_config(args, config)
+    )
     user_request = UserRequest(
         target_family=args.target_family,
         goal=args.goal,
@@ -87,6 +97,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             embedded_cache_config
         ),
         embedding_provider=embedding_provider,
+        query_text_builder=query_text_builder,
         limit=args.limit,
     )
 
@@ -132,6 +143,17 @@ def _resolve_embedding_config(args: argparse.Namespace) -> EmbeddingConfig:
         model=args.embedding_model,
         query_prefix=args.query_prefix,
     )
+
+
+def _resolve_query_builder_config(
+    args: argparse.Namespace,
+    config: RecommenderConfig | None,
+) -> QueryBuilderConfig:
+    if args.query_builder_strategy is not None:
+        return QueryBuilderConfig(strategy=args.query_builder_strategy)
+    if config is not None:
+        return config.query_builder
+    return QueryBuilderConfig()
 
 
 def _print_recommendations(recommendations: list[Recommendation]) -> None:

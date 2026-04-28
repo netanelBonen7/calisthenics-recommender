@@ -6,7 +6,10 @@ import socket
 
 import pytest
 
-from calisthenics_recommender.application.query_builder import build_query_text
+from calisthenics_recommender.application.query_builder import (
+    V1QueryTextBuilder,
+    build_query_text,
+)
 
 
 def get_exercise_model():
@@ -29,6 +32,16 @@ def get_user_request_model():
 def get_recommend_exercises():
     module = import_module("calisthenics_recommender.application.recommend_exercises")
     return getattr(module, "recommend_exercises")
+
+
+class RecordingQueryTextBuilder:
+    def __init__(self, text: str):
+        self._text = text
+        self.calls = []
+
+    def build(self, user_request):
+        self.calls.append(user_request)
+        return self._text
 
 
 def exercise_named(
@@ -154,6 +167,7 @@ def test_recommend_exercises_accepts_expected_arguments():
         "user_request",
         "embedded_exercise_search_repository",
         "embedding_provider",
+        "query_text_builder",
         "limit",
     ]
 
@@ -188,6 +202,7 @@ def test_recommend_exercises_embeds_query_and_calls_search_repository_with_user_
         user_request,
         search_repository,
         embedding_provider,
+        V1QueryTextBuilder(),
         limit=2,
     )
 
@@ -236,6 +251,7 @@ def test_recommend_exercises_returns_ranked_recommendations_from_search_results(
         user_request,
         search_repository,
         embedding_provider,
+        V1QueryTextBuilder(),
         limit=2,
     )
 
@@ -280,6 +296,7 @@ def test_recommend_exercises_returns_the_full_recommendation_shape_in_the_happy_
         user_request,
         search_repository,
         embedding_provider,
+        V1QueryTextBuilder(),
         limit=2,
     )[0]
 
@@ -306,6 +323,7 @@ def test_recommend_exercises_returns_an_empty_list_when_search_returns_no_result
         user_request,
         search_repository,
         embedding_provider,
+        V1QueryTextBuilder(),
         limit=3,
     )
 
@@ -351,6 +369,7 @@ def test_recommend_exercises_does_not_require_len_on_search_results():
         user_request,
         search_repository,
         embedding_provider,
+        V1QueryTextBuilder(),
         limit=2,
     )
 
@@ -385,6 +404,7 @@ def test_recommend_exercises_raises_for_invalid_limits_without_embedding_work(li
             user_request,
             search_repository,
             embedding_provider,
+            V1QueryTextBuilder(),
             limit=limit,
         )
 
@@ -403,6 +423,7 @@ def test_recommend_exercises_raises_a_clear_error_when_the_query_embedding_is_mi
             user_request,
             search_repository,
             embedding_provider,
+            V1QueryTextBuilder(),
             limit=1,
         )
 
@@ -437,6 +458,7 @@ def test_recommend_exercises_supports_duplicate_exercise_names_when_search_retur
         user_request,
         search_repository,
         embedding_provider,
+        V1QueryTextBuilder(),
         limit=2,
     )
 
@@ -488,13 +510,41 @@ def test_recommend_exercises_is_deterministic_and_does_not_mutate_inputs_or_touc
     monkeypatch.setattr(socket, "create_connection", fail)
 
     first = recommend_exercises(
-        user_request, search_repository, embedding_provider, limit=2
+        user_request,
+        search_repository,
+        embedding_provider,
+        V1QueryTextBuilder(),
+        limit=2,
     )
     second = recommend_exercises(
-        user_request, search_repository, embedding_provider, limit=2
+        user_request,
+        search_repository,
+        embedding_provider,
+        V1QueryTextBuilder(),
+        limit=2,
     )
 
     assert first == second
     assert user_request == original_user_request
     assert search_repository.snapshot() == original_search_results
     assert embedding_provider.embeddings == original_embeddings
+
+
+def test_recommend_exercises_uses_the_injected_query_text_builder():
+    recommend_exercises = get_recommend_exercises()
+    user_request = valid_user_request()
+    custom_query_text = "custom query text"
+    query_text_builder = RecordingQueryTextBuilder(custom_query_text)
+    search_repository = RecordingEmbeddedExerciseSearchRepository([])
+    embedding_provider = RecordingEmbeddingProvider({custom_query_text: [1.0, 0.0]})
+
+    recommend_exercises(
+        user_request,
+        search_repository,
+        embedding_provider,
+        query_text_builder,
+        limit=1,
+    )
+
+    assert query_text_builder.calls == [user_request]
+    assert embedding_provider.calls == [custom_query_text]

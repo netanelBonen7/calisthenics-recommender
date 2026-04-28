@@ -12,3 +12,9 @@ model = "fake-hash-v1"
 dimension = 4
 query_prefix = ""
 text_builder_version = "v1"
+
+[query_builder]
+strategy = "v1"
+
+[exercise_text_builder]
+strategy = "v1"

@@ -4,6 +4,7 @@ from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
     EmbeddedExerciseCacheMetadata,
 )
 from calisthenics_recommender.application.exercise_text_builder import (
+    V1ExerciseTextBuilder,
     build_exercise_text,
 )
 from calisthenics_recommender.application.process_pending_embedding_updates_workflow import (
@@ -91,6 +92,16 @@ class RecordingEmbeddingProvider:
         return self._embeddings[text]
 
 
+class RecordingExerciseTextBuilder:
+    def __init__(self, text: str):
+        self._text = text
+        self.calls = []
+
+    def build(self, exercise):
+        self.calls.append(exercise)
+        return self._text
+
+
 class RecordingCacheUpdater:
     def __init__(self):
         self.upserts = []
@@ -117,6 +128,7 @@ def build_workflow(
         pending_update_repository=pending_repository,
         exercise_repository=exercise_repository,
         embedding_provider=embedding_provider,
+        exercise_text_builder=V1ExerciseTextBuilder(),
         cache_updater=cache_updater,
         expected_metadata=metadata,
         actual_metadata=metadata if actual_metadata is None else actual_metadata,
@@ -147,6 +159,32 @@ def test_process_pending_upsert_builds_embedding_and_updates_cache():
     assert embedding_provider.calls == [exercise_text]
     assert cache_updater.upserts[0][0].exercise == exercise
     assert cache_updater.upserts[0][0].embedding == (1.0, 0.0, 0.0)
+
+
+def test_process_pending_upsert_uses_the_injected_exercise_text_builder():
+    exercise = make_exercise()
+    custom_text = "custom exercise text"
+    pending_repository = InMemoryPendingRepository(
+        [PendingEmbeddingUpdate("pull-up", "upsert", 1)]
+    )
+    exercise_text_builder = RecordingExerciseTextBuilder(custom_text)
+    embedding_provider = RecordingEmbeddingProvider(
+        embeddings={custom_text: [1.0, 0.0, 0.0]}
+    )
+    cache_updater = RecordingCacheUpdater()
+
+    ProcessPendingEmbeddingUpdatesWorkflow(
+        pending_update_repository=pending_repository,
+        exercise_repository=InMemoryExerciseLookupRepository([exercise]),
+        embedding_provider=embedding_provider,
+        exercise_text_builder=exercise_text_builder,
+        cache_updater=cache_updater,
+        expected_metadata=make_metadata(),
+        actual_metadata=make_metadata(),
+    ).process()
+
+    assert exercise_text_builder.calls == [exercise]
+    assert embedding_provider.calls == [custom_text]
 
 
 def test_process_pending_delete_removes_cache_entry():

@@ -17,8 +17,10 @@ from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
 from calisthenics_recommender.ports.embedded_exercise_search_repository import (
     EmbeddedExerciseSearchRepository,
 )
+from calisthenics_recommender.ports.query_text_builder import QueryTextBuilder
 from calisthenics_recommender.wiring import (
     build_embedded_exercise_search_repository,
+    build_query_text_builder,
     build_query_embedding_provider,
     read_embedded_cache_metadata,
 )
@@ -50,6 +52,7 @@ def create_configured_app_from_env(
     return create_app(
         embedded_exercise_search_repository=embedded_exercise_search_repository,
         embedding_provider=embedding_provider,
+        query_text_builder=_build_query_text_builder(config),
     )
 
 
@@ -70,6 +73,10 @@ def _build_embedding_provider(
         embedding_config=config.embedding,
         metadata=metadata,
     )
+
+
+def _build_query_text_builder(config: ApiRuntimeConfig) -> QueryTextBuilder:
+    return build_query_text_builder(config.query_builder)
 
 
 def _read_cache_metadata(config: ApiRuntimeConfig) -> EmbeddedExerciseCacheMetadata:

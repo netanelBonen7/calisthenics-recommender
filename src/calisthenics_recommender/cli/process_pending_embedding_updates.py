@@ -8,12 +8,14 @@ from calisthenics_recommender.application.process_pending_embedding_updates_work
     ProcessPendingEmbeddingUpdatesWorkflow,
 )
 from calisthenics_recommender.config import (
+    ExerciseTextBuilderConfig,
     RecommenderConfig,
     load_recommender_config,
 )
 from calisthenics_recommender.wiring import (
     build_cache_embedding_provider_and_metadata,
     build_embedded_exercise_cache_updater,
+    build_exercise_text_builder,
     build_exercise_lookup_repository,
     build_pending_embedding_update_repository,
     read_embedded_cache_metadata,
@@ -28,6 +30,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument(
+        "--exercise-text-builder-strategy",
+        choices=("v1",),
+        default=None,
+    )
     parser.add_argument("--limit", type=_positive_int)
     return parser
 
@@ -52,15 +59,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     exercise_repository = build_exercise_lookup_repository(raw_exercises_config)
     cache_updater = build_embedded_exercise_cache_updater(embedded_cache_config)
+    exercise_text_builder_config = _resolve_exercise_text_builder_config(args, config)
     embedding_provider, expected_metadata = build_cache_embedding_provider_and_metadata(
-        embedding_config
+        embedding_config,
+        exercise_text_builder_config,
     )
+    exercise_text_builder = build_exercise_text_builder(exercise_text_builder_config)
     actual_metadata = read_embedded_cache_metadata(embedded_cache_config)
 
     result = ProcessPendingEmbeddingUpdatesWorkflow(
         pending_update_repository=pending_update_repository,
         exercise_repository=exercise_repository,
         embedding_provider=embedding_provider,
+        exercise_text_builder=exercise_text_builder,
         cache_updater=cache_updater,
         expected_metadata=expected_metadata,
         actual_metadata=actual_metadata,
@@ -96,6 +107,15 @@ def _positive_int(value: str) -> int:
     if parsed_value <= 0:
         raise argparse.ArgumentTypeError("must be greater than 0")
     return parsed_value
+
+
+def _resolve_exercise_text_builder_config(
+    args: argparse.Namespace,
+    config: RecommenderConfig,
+) -> ExerciseTextBuilderConfig:
+    if args.exercise_text_builder_strategy is not None:
+        return ExerciseTextBuilderConfig(strategy=args.exercise_text_builder_strategy)
+    return config.exercise_text_builder
 
 
 if __name__ == "__main__":

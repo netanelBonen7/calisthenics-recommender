@@ -15,7 +15,10 @@ from calisthenics_recommender.adapters.local_embedded_exercise_cache import (
     LocalEmbeddedExerciseCache,
     LocalEmbeddedExerciseRepository,
 )
-from calisthenics_recommender.application.query_builder import build_query_text
+from calisthenics_recommender.application.query_builder import (
+    V1QueryTextBuilder,
+    build_query_text,
+)
 from calisthenics_recommender.domain.embedded_exercise import EmbeddedExercise
 from calisthenics_recommender.domain.exercise import Exercise
 from calisthenics_recommender.domain.user_request import UserRequest
@@ -105,6 +108,7 @@ def build_client(tmp_path: Path) -> tuple[TestClient, RecordingFakeEmbeddingProv
             LocalEmbeddedExerciseRepository(cache_path)
         ),
         embedding_provider=embedding_provider,
+        query_text_builder=V1QueryTextBuilder(),
     )
     return TestClient(app), embedding_provider
 

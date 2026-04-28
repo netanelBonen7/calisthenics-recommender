@@ -4,7 +4,6 @@ from collections.abc import Iterable
 from calisthenics_recommender.application.explanation_builder import (
     build_explanation,
 )
-from calisthenics_recommender.application.query_builder import build_query_text
 from calisthenics_recommender.domain.embedded_exercise_search_result import (
     EmbeddedExerciseSearchResult,
 )
@@ -17,6 +16,7 @@ from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
 from calisthenics_recommender.ports.embedded_exercise_search_repository import (
     EmbeddedExerciseSearchRepository,
 )
+from calisthenics_recommender.ports.query_text_builder import QueryTextBuilder
 
 
 logger = logging.getLogger(__name__)
@@ -26,12 +26,13 @@ def recommend_exercises(
     user_request: UserRequest,
     embedded_exercise_search_repository: EmbeddedExerciseSearchRepository,
     embedding_provider: EmbeddingProvider,
+    query_text_builder: QueryTextBuilder,
     limit: int,
 ) -> list[Recommendation]:
     if limit <= 0:
         raise ValueError("limit must be greater than 0")
 
-    query_embedding = embedding_provider.embed(build_query_text(user_request))
+    query_embedding = embedding_provider.embed(query_text_builder.build(user_request))
     search_results = embedded_exercise_search_repository.search(
         query_embedding=query_embedding,
         available_equipment=user_request.available_equipment,

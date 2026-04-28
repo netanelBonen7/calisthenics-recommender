@@ -22,6 +22,11 @@ def get_build_exercise_text():
     return getattr(module, "build_exercise_text")
 
 
+def get_v1_exercise_text_builder():
+    module = import_module("calisthenics_recommender.application.exercise_text_builder")
+    return getattr(module, "V1ExerciseTextBuilder")
+
+
 def get_build_embedded_exercise_cache():
     module = import_module(
         "calisthenics_recommender.application.embedded_exercise_cache_workflow"
@@ -142,6 +147,7 @@ def test_build_embedded_exercise_cache_exists_and_accepts_expected_arguments():
     assert list(inspect.signature(build_embedded_exercise_cache).parameters) == [
         "exercise_repository",
         "embedding_provider",
+        "exercise_text_builder",
         "cache_writer",
         "metadata",
     ]
@@ -151,6 +157,7 @@ def test_build_embedded_exercise_cache_writes_embedded_exercises_in_encounter_or
     EmbeddedExercise = get_embedded_exercise_model()
     build_embedded_exercise_cache = get_build_embedded_exercise_cache()
     build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercises = [exercise_named("Pull Up"), exercise_named("Body Row")]
     exercise_repository = OnePassExerciseRepository(exercises)
     provider = RecordingEmbeddingProvider(
@@ -165,6 +172,7 @@ def test_build_embedded_exercise_cache_writes_embedded_exercises_in_encounter_or
     build_embedded_exercise_cache(
         exercise_repository=exercise_repository,
         embedding_provider=provider,
+        exercise_text_builder=V1ExerciseTextBuilder(),
         cache_writer=cache_writer,
         metadata=metadata,
     )
@@ -188,6 +196,7 @@ def test_build_embedded_exercise_cache_writes_embedded_exercises_in_encounter_or
 def test_build_embedded_exercise_cache_uses_build_exercise_text_outputs_in_order():
     build_embedded_exercise_cache = get_build_embedded_exercise_cache()
     build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercises = [exercise_named("Pull Up"), exercise_named("Body Row")]
     expected_texts = [build_exercise_text(exercise) for exercise in exercises]
     exercise_repository = OnePassExerciseRepository(exercises)
@@ -201,6 +210,7 @@ def test_build_embedded_exercise_cache_uses_build_exercise_text_outputs_in_order
     build_embedded_exercise_cache(
         exercise_repository=exercise_repository,
         embedding_provider=provider,
+        exercise_text_builder=V1ExerciseTextBuilder(),
         cache_writer=RecordingCacheWriter(),
         metadata={"cache": "v1"},
     )
@@ -212,6 +222,7 @@ def test_build_embedded_exercise_cache_uses_build_exercise_text_outputs_in_order
 def test_build_embedded_exercise_cache_streams_from_repository_to_writer():
     build_embedded_exercise_cache = get_build_embedded_exercise_cache()
     build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercises = [
         exercise_named("Pull Up"),
         exercise_named("Body Row"),
@@ -230,6 +241,7 @@ def test_build_embedded_exercise_cache_streams_from_repository_to_writer():
     build_embedded_exercise_cache(
         exercise_repository=exercise_repository,
         embedding_provider=provider,
+        exercise_text_builder=V1ExerciseTextBuilder(),
         cache_writer=cache_writer,
         metadata={"cache": "v1"},
     )
@@ -248,6 +260,7 @@ def test_build_embedded_exercise_cache_streams_from_repository_to_writer():
 def test_build_embedded_exercise_cache_propagates_embedding_errors_during_writer_consumption():
     build_embedded_exercise_cache = get_build_embedded_exercise_cache()
     build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercises = [exercise_named("Pull Up"), exercise_named("Body Row")]
     first_text = build_exercise_text(exercises[0])
     second_text = build_exercise_text(exercises[1])
@@ -261,6 +274,7 @@ def test_build_embedded_exercise_cache_propagates_embedding_errors_during_writer
         build_embedded_exercise_cache(
             exercise_repository=exercise_repository,
             embedding_provider=provider,
+            exercise_text_builder=V1ExerciseTextBuilder(),
             cache_writer=RecordingCacheWriter(),
             metadata={"cache": "v1"},
         )
@@ -268,6 +282,7 @@ def test_build_embedded_exercise_cache_propagates_embedding_errors_during_writer
 
 def test_build_embedded_exercise_cache_propagates_cache_writer_errors():
     build_embedded_exercise_cache = get_build_embedded_exercise_cache()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercise_repository = OnePassExerciseRepository([exercise_named("Pull Up")])
     provider = RecordingEmbeddingProvider(
         embeddings={get_build_exercise_text()(exercise_named("Pull Up")): [1.0, 0.0]}
@@ -277,6 +292,7 @@ def test_build_embedded_exercise_cache_propagates_cache_writer_errors():
         build_embedded_exercise_cache(
             exercise_repository=exercise_repository,
             embedding_provider=provider,
+            exercise_text_builder=V1ExerciseTextBuilder(),
             cache_writer=FailingCacheWriter(RuntimeError("cache write failed")),
             metadata={"cache": "v1"},
         )
@@ -287,6 +303,7 @@ def test_build_embedded_exercise_cache_has_no_direct_file_csv_network_or_recomme
 ):
     build_embedded_exercise_cache = get_build_embedded_exercise_cache()
     build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercises = [exercise_named("Pull Up"), exercise_named("Body Row")]
     exercise_repository = OnePassExerciseRepository(exercises)
     provider = RecordingEmbeddingProvider(
@@ -317,6 +334,7 @@ def test_build_embedded_exercise_cache_has_no_direct_file_csv_network_or_recomme
     build_embedded_exercise_cache(
         exercise_repository=exercise_repository,
         embedding_provider=provider,
+        exercise_text_builder=V1ExerciseTextBuilder(),
         cache_writer=cache_writer,
         metadata={"cache": "v1"},
     )

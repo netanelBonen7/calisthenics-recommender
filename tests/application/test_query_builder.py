@@ -14,6 +14,11 @@ def get_build_query_text():
     return getattr(module, "build_query_text")
 
 
+def get_v1_query_text_builder():
+    module = import_module("calisthenics_recommender.application.query_builder")
+    return getattr(module, "V1QueryTextBuilder")
+
+
 def valid_user_request():
     UserRequest = get_user_request_model()
     return UserRequest(
@@ -70,3 +75,11 @@ def test_build_query_text_is_pure_and_does_not_touch_files_or_network(monkeypatc
         "Available equipment: Bar, Rings.\n"
         "Recommend suitable calisthenics exercises from the dataset."
     )
+
+
+def test_v1_query_text_builder_matches_build_query_text_exactly():
+    build_query_text = get_build_query_text()
+    V1QueryTextBuilder = get_v1_query_text_builder()
+    user_request = valid_user_request()
+
+    assert V1QueryTextBuilder().build(user_request) == build_query_text(user_request)

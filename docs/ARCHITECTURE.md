@@ -214,7 +214,10 @@ TOML config selects runtime and cache-building infrastructure:
 - Raw exercise source for cache building.
 - Embedded cache backend and path.
 - Embedding provider, model, dimension, and prefixes.
-- Text builder version.
+- Query builder strategy for runtime query text generation.
+- Exercise text builder strategy for cached exercise embeddings.
+
+Only the effective exercise text builder strategy participates in embedded-cache metadata compatibility. Query builder strategy affects runtime recommendation queries only.
 
 FastAPI runtime reads `CALISTHENICS_RECOMMENDER_CONFIG_PATH`. CLI commands can use optional `--config`. Explicit CLI flags can override config values where that command supports overrides.
 

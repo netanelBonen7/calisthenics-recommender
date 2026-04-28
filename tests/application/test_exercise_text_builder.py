@@ -14,6 +14,11 @@ def get_build_exercise_text():
     return getattr(module, "build_exercise_text")
 
 
+def get_v1_exercise_text_builder():
+    module = import_module("calisthenics_recommender.application.exercise_text_builder")
+    return getattr(module, "V1ExerciseTextBuilder")
+
+
 def valid_exercise():
     Exercise = get_exercise_model()
     return Exercise(
@@ -77,3 +82,11 @@ def test_build_exercise_text_is_pure_and_does_not_touch_files_or_network(monkeyp
         "Required equipment: Bar, Rings\n"
         "Categories: Upper Body Pull, Skill Work"
     )
+
+
+def test_v1_exercise_text_builder_matches_build_exercise_text_exactly():
+    build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
+    exercise = valid_exercise()
+
+    assert V1ExerciseTextBuilder().build(exercise) == build_exercise_text(exercise)

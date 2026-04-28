@@ -33,9 +33,15 @@ from calisthenics_recommender.adapters.sqlite_exercise_repository import (
 from calisthenics_recommender.adapters.sqlite_pending_embedding_update_repository import (
     SQLitePendingEmbeddingUpdateRepository,
 )
+from calisthenics_recommender.application.exercise_text_builder import (
+    V1ExerciseTextBuilder,
+)
+from calisthenics_recommender.application.query_builder import V1QueryTextBuilder
 from calisthenics_recommender.config import (
     EmbeddedCacheConfig,
     EmbeddingConfig,
+    ExerciseTextBuilderConfig,
+    QueryBuilderConfig,
     RawExercisesConfig,
 )
 from calisthenics_recommender.ports.embedded_exercise_cache_updater import (
@@ -45,6 +51,9 @@ from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
 from calisthenics_recommender.ports.embedded_exercise_search_repository import (
     EmbeddedExerciseSearchRepository,
 )
+from calisthenics_recommender.ports.exercise_text_builder import (
+    ExerciseTextBuilder,
+)
 from calisthenics_recommender.ports.exercise_lookup_repository import (
     ExerciseLookupRepository,
 )
@@ -52,6 +61,7 @@ from calisthenics_recommender.ports.exercise_repository import ExerciseRepositor
 from calisthenics_recommender.ports.pending_embedding_update_repository import (
     PendingEmbeddingUpdateRepository,
 )
+from calisthenics_recommender.ports.query_text_builder import QueryTextBuilder
 
 
 def build_exercise_repository(
@@ -120,6 +130,27 @@ def read_embedded_cache_metadata(
         ) from error
 
 
+def build_query_text_builder(
+    query_builder_config: QueryBuilderConfig,
+) -> QueryTextBuilder:
+    if query_builder_config.strategy == V1QueryTextBuilder.STRATEGY:
+        return V1QueryTextBuilder()
+    raise ValueError(
+        f"Unsupported query builder strategy: {query_builder_config.strategy}"
+    )
+
+
+def build_exercise_text_builder(
+    exercise_text_builder_config: ExerciseTextBuilderConfig,
+) -> ExerciseTextBuilder:
+    if exercise_text_builder_config.strategy == V1ExerciseTextBuilder.STRATEGY:
+        return V1ExerciseTextBuilder()
+    raise ValueError(
+        "Unsupported exercise text builder strategy: "
+        f"{exercise_text_builder_config.strategy}"
+    )
+
+
 def build_query_embedding_provider(
     *,
     embedding_config: EmbeddingConfig,
@@ -145,8 +176,9 @@ def build_query_embedding_provider(
 
 def build_cache_embedding_provider_and_metadata(
     embedding_config: EmbeddingConfig,
+    exercise_text_builder_config: ExerciseTextBuilderConfig,
 ) -> tuple[object, EmbeddedExerciseCacheMetadata]:
-    text_builder_version = _require_text_builder_version(embedding_config)
+    text_builder_version = exercise_text_builder_config.strategy
 
     if embedding_config.provider == "sentence-transformer":
         model_name = (
@@ -189,9 +221,3 @@ def _require_embedding_dimension(embedding_config: EmbeddingConfig) -> int:
             "--embedding-dimension is required for local-deterministic mode"
         )
     return embedding_config.dimension
-
-
-def _require_text_builder_version(embedding_config: EmbeddingConfig) -> str:
-    if embedding_config.text_builder_version is None:
-        raise ValueError("--text-builder-version is required")
-    return embedding_config.text_builder_version

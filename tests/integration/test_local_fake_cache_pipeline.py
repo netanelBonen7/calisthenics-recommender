@@ -18,9 +18,11 @@ from calisthenics_recommender.application.embedded_exercise_cache_workflow impor
     build_embedded_exercise_cache,
 )
 from calisthenics_recommender.application.exercise_text_builder import (
+    V1ExerciseTextBuilder,
     build_exercise_text,
 )
 from calisthenics_recommender.application.query_builder import build_query_text
+from calisthenics_recommender.application.query_builder import V1QueryTextBuilder
 from calisthenics_recommender.application.recommend_exercises import (
     recommend_exercises,
 )
@@ -136,6 +138,7 @@ def test_local_fake_cache_pipeline_builds_cache_and_recommends_from_it(tmp_path)
     build_embedded_exercise_cache(
         exercise_repository=CsvExerciseRepository(csv_path),
         embedding_provider=embedding_provider,
+        exercise_text_builder=V1ExerciseTextBuilder(),
         cache_writer=LocalEmbeddedExerciseCache(cache_path),
         metadata=EmbeddedExerciseCacheMetadata(
             embedding_model="fake-local",
@@ -150,6 +153,7 @@ def test_local_fake_cache_pipeline_builds_cache_and_recommends_from_it(tmp_path)
             LocalEmbeddedExerciseRepository(cache_path)
         ),
         embedding_provider=embedding_provider,
+        query_text_builder=V1QueryTextBuilder(),
         limit=3,
     )
 

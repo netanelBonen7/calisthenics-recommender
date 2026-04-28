@@ -22,6 +22,11 @@ def get_build_exercise_text():
     return getattr(module, "build_exercise_text")
 
 
+def get_v1_exercise_text_builder():
+    module = import_module("calisthenics_recommender.application.exercise_text_builder")
+    return getattr(module, "V1ExerciseTextBuilder")
+
+
 def get_build_embedded_exercises():
     module = import_module(
         "calisthenics_recommender.application.embedded_exercise_builder"
@@ -64,6 +69,16 @@ class RecordingEmbeddingProvider:
             raise KeyError(f"Unknown text: {text}") from error
 
 
+class RecordingExerciseTextBuilder:
+    def __init__(self, texts_by_name: dict[str, str] | None = None) -> None:
+        self._texts_by_name = {} if texts_by_name is None else dict(texts_by_name)
+        self.calls: list[str] = []
+
+    def build(self, exercise) -> str:
+        self.calls.append(exercise.name)
+        return self._texts_by_name.get(exercise.name, f"built:{exercise.name}")
+
+
 class LenExplodingIterable(Iterable):
     def __init__(self, values):
         self._values = tuple(values)
@@ -81,6 +96,7 @@ def test_build_embedded_exercises_exists_and_accepts_expected_arguments():
     assert list(inspect.signature(build_embedded_exercises).parameters) == [
         "exercises",
         "embedding_provider",
+        "exercise_text_builder",
     ]
 
 
@@ -88,6 +104,7 @@ def test_build_embedded_exercises_yields_embedded_exercises_with_original_exerci
     EmbeddedExercise = get_embedded_exercise_model()
     build_embedded_exercises = get_build_embedded_exercises()
     build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercises = [exercise_named("Pull Up"), exercise_named("Body Row")]
     provider = RecordingEmbeddingProvider(
         embeddings={
@@ -96,7 +113,9 @@ def test_build_embedded_exercises_yields_embedded_exercises_with_original_exerci
         }
     )
 
-    results = list(build_embedded_exercises(exercises, provider))
+    results = list(
+        build_embedded_exercises(exercises, provider, V1ExerciseTextBuilder())
+    )
 
     assert len(results) == 2
     assert all(isinstance(result, EmbeddedExercise) for result in results)
@@ -111,6 +130,7 @@ def test_build_embedded_exercises_yields_embedded_exercises_with_original_exerci
 def test_build_embedded_exercises_uses_build_exercise_text_outputs_in_encounter_order():
     build_embedded_exercises = get_build_embedded_exercises()
     build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercises = [exercise_named("Pull Up"), exercise_named("Body Row")]
     expected_texts = [build_exercise_text(exercise) for exercise in exercises]
     provider = RecordingEmbeddingProvider(
@@ -120,7 +140,9 @@ def test_build_embedded_exercises_uses_build_exercise_text_outputs_in_encounter_
         }
     )
 
-    results = list(build_embedded_exercises(exercises, provider))
+    results = list(
+        build_embedded_exercises(exercises, provider, V1ExerciseTextBuilder())
+    )
 
     assert len(results) == 2
     assert provider.calls == expected_texts
@@ -130,6 +152,7 @@ def test_build_embedded_exercises_uses_build_exercise_text_outputs_in_encounter_
 def test_build_embedded_exercises_accepts_a_one_pass_generator():
     build_embedded_exercises = get_build_embedded_exercises()
     build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercises = [exercise_named("Pull Up"), exercise_named("Body Row")]
     provider = RecordingEmbeddingProvider(
         embeddings={
@@ -139,7 +162,11 @@ def test_build_embedded_exercises_accepts_a_one_pass_generator():
     )
 
     results = list(
-        build_embedded_exercises((exercise for exercise in exercises), provider)
+        build_embedded_exercises(
+            (exercise for exercise in exercises),
+            provider,
+            V1ExerciseTextBuilder(),
+        )
     )
 
     assert [result.exercise.name for result in results] == ["Pull Up", "Body Row"]
@@ -148,6 +175,7 @@ def test_build_embedded_exercises_accepts_a_one_pass_generator():
 def test_build_embedded_exercises_does_not_require_len_on_exercises():
     build_embedded_exercises = get_build_embedded_exercises()
     build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercises = LenExplodingIterable([exercise_named("Pull Up"), exercise_named("Body Row")])
     expected_texts = [build_exercise_text(exercise) for exercise in exercises]
     provider = RecordingEmbeddingProvider(
@@ -157,7 +185,9 @@ def test_build_embedded_exercises_does_not_require_len_on_exercises():
         }
     )
 
-    results = list(build_embedded_exercises(exercises, provider))
+    results = list(
+        build_embedded_exercises(exercises, provider, V1ExerciseTextBuilder())
+    )
 
     assert [result.exercise.name for result in results] == ["Pull Up", "Body Row"]
 
@@ -165,6 +195,7 @@ def test_build_embedded_exercises_does_not_require_len_on_exercises():
 def test_build_embedded_exercises_yields_the_first_result_without_consuming_all_inputs():
     build_embedded_exercises = get_build_embedded_exercises()
     build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercises = [
         exercise_named("Pull Up"),
         exercise_named("Body Row"),
@@ -185,7 +216,13 @@ def test_build_embedded_exercises_yields_the_first_result_without_consuming_all_
         }
     )
 
-    iterator = iter(build_embedded_exercises(generate_exercises(), provider))
+    iterator = iter(
+        build_embedded_exercises(
+            generate_exercises(),
+            provider,
+            V1ExerciseTextBuilder(),
+        )
+    )
     first = next(iterator)
 
     assert first.exercise.name == "Pull Up"
@@ -201,6 +238,7 @@ def test_build_embedded_exercises_yields_the_first_result_without_consuming_all_
 def test_build_embedded_exercises_propagates_embedding_provider_errors(error_type):
     build_embedded_exercises = get_build_embedded_exercises()
     build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercises = [exercise_named("Pull Up"), exercise_named("Body Row")]
     failing_text = build_exercise_text(exercises[1])
     provider = RecordingEmbeddingProvider(
@@ -208,7 +246,7 @@ def test_build_embedded_exercises_propagates_embedding_provider_errors(error_typ
         errors={failing_text: error_type("embedding failed")},
     )
 
-    iterator = build_embedded_exercises(exercises, provider)
+    iterator = build_embedded_exercises(exercises, provider, V1ExerciseTextBuilder())
 
     first = next(iterator)
 
@@ -222,6 +260,7 @@ def test_build_embedded_exercises_is_pure_and_does_not_mutate_input_exercises(
 ):
     build_embedded_exercises = get_build_embedded_exercises()
     build_exercise_text = get_build_exercise_text()
+    V1ExerciseTextBuilder = get_v1_exercise_text_builder()
     exercises = [
         exercise_named("Pull Up", materials=["Bar", "Rings"]),
         exercise_named("Body Row", materials=["Bar"]),
@@ -243,7 +282,31 @@ def test_build_embedded_exercises_is_pure_and_does_not_mutate_input_exercises(
     monkeypatch.setattr(socket, "socket", fail)
     monkeypatch.setattr(socket, "create_connection", fail)
 
-    results = list(build_embedded_exercises(exercises, provider))
+    results = list(
+        build_embedded_exercises(exercises, provider, V1ExerciseTextBuilder())
+    )
 
     assert [result.exercise.name for result in results] == ["Pull Up", "Body Row"]
     assert [exercise.model_dump() for exercise in exercises] == original_dumps
+
+
+def test_build_embedded_exercises_uses_the_injected_exercise_text_builder():
+    build_embedded_exercises = get_build_embedded_exercises()
+    exercises = [exercise_named("Pull Up"), exercise_named("Body Row")]
+    exercise_text_builder = RecordingExerciseTextBuilder(
+        {"Pull Up": "custom:pull", "Body Row": "custom:row"}
+    )
+    provider = RecordingEmbeddingProvider(
+        embeddings={
+            "custom:pull": [1.0, 0.0],
+            "custom:row": [0.8, 0.2],
+        }
+    )
+
+    results = list(
+        build_embedded_exercises(exercises, provider, exercise_text_builder)
+    )
+
+    assert [result.exercise.name for result in results] == ["Pull Up", "Body Row"]
+    assert exercise_text_builder.calls == ["Pull Up", "Body Row"]
+    assert provider.calls == ["custom:pull", "custom:row"]

@@ -41,6 +41,7 @@ def test_load_api_runtime_config_loads_valid_jsonl_config(tmp_path):
     assert config.embedding.provider == "local-deterministic"
     assert config.embedding.model == "fake-hash-v1"
     assert config.embedding.query_prefix == "query: "
+    assert config.query_builder.strategy == "v1"
 
 
 def test_load_recommender_config_loads_raw_exercises_and_extended_embedding_fields(
@@ -65,6 +66,12 @@ def test_load_recommender_config_loads_raw_exercises_and_extended_embedding_fiel
             'query_prefix = "query: "\n'
             'text_prefix = "passage: "\n'
             'text_builder_version = "v1"\n'
+            "\n"
+            "[query_builder]\n"
+            'strategy = "v1"\n'
+            "\n"
+            "[exercise_text_builder]\n"
+            'strategy = "v1"\n'
         ),
     )
 
@@ -87,6 +94,8 @@ def test_load_recommender_config_loads_raw_exercises_and_extended_embedding_fiel
     assert config.embedding.query_prefix == "query: "
     assert config.embedding.text_prefix == "passage: "
     assert config.embedding.text_builder_version == "v1"
+    assert config.query_builder.strategy == "v1"
+    assert config.exercise_text_builder.strategy == "v1"
 
 
 def test_load_api_runtime_config_loads_valid_sqlite_config(tmp_path):
@@ -109,6 +118,7 @@ def test_load_api_runtime_config_loads_valid_sqlite_config(tmp_path):
     assert config.embedded_cache.backend == "sqlite"
     assert config.embedding.provider == "sentence-transformer"
     assert config.embedding.model == "custom/local-model"
+    assert config.query_builder.strategy == "v1"
 
 
 def test_load_api_runtime_config_resolves_relative_paths_against_config_file(tmp_path):
@@ -269,6 +279,7 @@ def test_load_api_runtime_config_defaults_query_prefix_to_empty_string(tmp_path)
     config = load_api_runtime_config(config_path)
 
     assert config.embedding.query_prefix == ""
+    assert config.query_builder.strategy == "v1"
 
 
 def test_load_recommender_config_defaults_optional_sections_to_none(tmp_path):
@@ -280,6 +291,8 @@ def test_load_recommender_config_defaults_optional_sections_to_none(tmp_path):
     assert config.raw_exercises is None
     assert config.embedded_cache is None
     assert config.embedding is None
+    assert config.query_builder.strategy == "v1"
+    assert config.exercise_text_builder.strategy == "v1"
 
 
 def test_load_recommender_config_defaults_extended_embedding_fields(tmp_path):
@@ -299,6 +312,8 @@ def test_load_recommender_config_defaults_extended_embedding_fields(tmp_path):
     assert config.embedding.query_prefix == ""
     assert config.embedding.text_prefix == ""
     assert config.embedding.text_builder_version is None
+    assert config.query_builder.strategy == "v1"
+    assert config.exercise_text_builder.strategy == "v1"
 
 
 @pytest.mark.parametrize(
@@ -341,6 +356,28 @@ def test_load_recommender_config_defaults_extended_embedding_fields(tmp_path):
             ),
             r"Invalid config at .*: \[embedding\]\.text_builder_version must be a non-empty string",
         ),
+        (
+            (
+                "[query_builder]\n"
+                'strategy = "unsupported"\n'
+            ),
+            r"Invalid config at .*: \[query_builder\]\.strategy must be one of: v1",
+        ),
+        (
+            (
+                "[exercise_text_builder]\n"
+                'strategy = "unsupported"\n'
+            ),
+            r"Invalid config at .*: \[exercise_text_builder\]\.strategy must be one of: v1",
+        ),
+        (
+            (
+                "[embedding]\n"
+                'provider = "local-deterministic"\n'
+                'text_builder_version = "unsupported"\n'
+            ),
+            r"Invalid config at .*: \[embedding\]\.text_builder_version must be one of: v1",
+        ),
     ],
 )
 def test_load_recommender_config_rejects_invalid_extended_fields(
@@ -351,3 +388,42 @@ def test_load_recommender_config_rejects_invalid_extended_fields(
 
     with pytest.raises(ConfigError, match=expected_message):
         load_recommender_config(config_path)
+
+
+def test_load_recommender_config_uses_legacy_embedding_text_builder_version_as_fallback(
+    tmp_path,
+):
+    config_path = tmp_path / "recommender.toml"
+    write_config(
+        config_path,
+        (
+            "[embedding]\n"
+            'provider = "local-deterministic"\n'
+            'text_builder_version = "v1"\n'
+        ),
+    )
+
+    config = load_recommender_config(config_path)
+
+    assert config.exercise_text_builder.strategy == "v1"
+
+
+def test_load_recommender_config_prefers_new_exercise_text_builder_strategy_over_legacy_field(
+    tmp_path,
+):
+    config_path = tmp_path / "recommender.toml"
+    write_config(
+        config_path,
+        (
+            "[embedding]\n"
+            'provider = "local-deterministic"\n'
+            'text_builder_version = "v1"\n'
+            "\n"
+            "[exercise_text_builder]\n"
+            'strategy = "v1"\n'
+        ),
+    )
+
+    config = load_recommender_config(config_path)
+
+    assert config.exercise_text_builder.strategy == "v1"

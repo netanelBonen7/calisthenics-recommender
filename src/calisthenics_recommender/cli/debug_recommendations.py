@@ -4,22 +4,26 @@ import argparse
 from pathlib import Path
 from typing import Sequence
 
-from calisthenics_recommender.application.exercise_text_builder import (
-    build_exercise_text,
-)
-from calisthenics_recommender.application.query_builder import build_query_text
 from calisthenics_recommender.config import (
     EmbeddedCacheConfig,
     EmbeddingConfig,
+    ExerciseTextBuilderConfig,
+    QueryBuilderConfig,
     RawExercisesConfig,
     RecommenderConfig,
     load_recommender_config,
 )
 from calisthenics_recommender.domain.user_request import UserRequest
+from calisthenics_recommender.ports.exercise_text_builder import (
+    ExerciseTextBuilder,
+)
 from calisthenics_recommender.ports.exercise_repository import ExerciseRepository
+from calisthenics_recommender.ports.query_text_builder import QueryTextBuilder
 from calisthenics_recommender.wiring import (
     build_embedded_exercise_search_repository,
     build_exercise_repository,
+    build_exercise_text_builder,
+    build_query_text_builder,
     build_query_embedding_provider,
     read_embedded_cache_metadata,
 )
@@ -61,6 +65,16 @@ def build_argument_parser(
     parser.add_argument("--current-level")
     parser.add_argument("--available-equipment", action="append")
     parser.add_argument(
+        "--query-builder-strategy",
+        choices=("v1",),
+        default=None,
+    )
+    parser.add_argument(
+        "--exercise-text-builder-strategy",
+        choices=("v1",),
+        default=None,
+    )
+    parser.add_argument(
         "--query-prefix",
         default="" if embedding_config is None else embedding_config.query_prefix,
     )
@@ -76,13 +90,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     user_request = (
         _build_user_request(args) if _has_complete_user_request_args(args) else None
     )
+    query_text_builder = build_query_text_builder(
+        _resolve_query_builder_config(args, config)
+    )
+    exercise_text_builder = build_exercise_text_builder(
+        _resolve_exercise_text_builder_config(args, config)
+    )
 
     if user_request is not None:
-        _print_query_text(user_request)
+        _print_query_text(user_request, query_text_builder)
 
     if args.exercise_name:
         _print_exercise_texts(
             exercise_repository=_build_exercise_text_repository(args, config),
+            exercise_text_builder=exercise_text_builder,
             requested_names=list(args.exercise_name),
         )
 
@@ -90,6 +111,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         _print_top_candidates(
             embedded_cache_config=_resolve_embedded_cache_config(args, config),
             embedding_config=_resolve_embedding_config(args),
+            query_text_builder=query_text_builder,
+            exercise_text_builder=exercise_text_builder,
             user_request=user_request,
             limit=args.limit,
         )
@@ -200,6 +223,28 @@ def _resolve_embedding_config(args: argparse.Namespace) -> EmbeddingConfig:
     )
 
 
+def _resolve_query_builder_config(
+    args: argparse.Namespace,
+    config: RecommenderConfig | None,
+) -> QueryBuilderConfig:
+    if args.query_builder_strategy is not None:
+        return QueryBuilderConfig(strategy=args.query_builder_strategy)
+    if config is not None:
+        return config.query_builder
+    return QueryBuilderConfig()
+
+
+def _resolve_exercise_text_builder_config(
+    args: argparse.Namespace,
+    config: RecommenderConfig | None,
+) -> ExerciseTextBuilderConfig:
+    if args.exercise_text_builder_strategy is not None:
+        return ExerciseTextBuilderConfig(strategy=args.exercise_text_builder_strategy)
+    if config is not None:
+        return config.exercise_text_builder
+    return ExerciseTextBuilderConfig()
+
+
 def _build_exercise_text_repository(
     args: argparse.Namespace,
     config: RecommenderConfig | None,
@@ -213,14 +258,18 @@ def _build_exercise_text_repository(
     return build_exercise_repository(config.raw_exercises)
 
 
-def _print_query_text(user_request: UserRequest) -> None:
+def _print_query_text(
+    user_request: UserRequest,
+    query_text_builder: QueryTextBuilder,
+) -> None:
     print("=== QUERY TEXT ===")
-    print(build_query_text(user_request))
+    print(query_text_builder.build(user_request))
 
 
 def _print_exercise_texts(
     *,
     exercise_repository: ExerciseRepository,
+    exercise_text_builder: ExerciseTextBuilder,
     requested_names: list[str],
 ) -> None:
     matches_by_name = {name: [] for name in requested_names}
@@ -245,13 +294,15 @@ def _print_exercise_texts(
                 else f"--- {requested_name} ---"
             )
             print(header)
-            print(build_exercise_text(exercise))
+            print(exercise_text_builder.build(exercise))
 
 
 def _print_top_candidates(
     *,
     embedded_cache_config: EmbeddedCacheConfig,
     embedding_config: EmbeddingConfig,
+    query_text_builder: QueryTextBuilder,
+    exercise_text_builder: ExerciseTextBuilder,
     user_request: UserRequest,
     limit: int,
 ) -> None:
@@ -260,7 +311,7 @@ def _print_top_candidates(
         embedding_config=embedding_config,
         metadata=metadata,
     )
-    query_text = build_query_text(user_request)
+    query_text = query_text_builder.build(user_request)
     query_embedding = embedding_provider.embed(query_text)
     search_repository = build_embedded_exercise_search_repository(
         embedded_cache_config
@@ -285,7 +336,7 @@ def _print_top_candidates(
         print(f"   Categories: {', '.join(exercise.categories)}")
         print(f"   Required equipment: {', '.join(exercise.materials)}")
         print("   Exercise text:")
-        for line in build_exercise_text(exercise).splitlines():
+        for line in exercise_text_builder.build(exercise).splitlines():
             print(f"   {line}")
 
 
