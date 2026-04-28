@@ -14,15 +14,19 @@ user request -> query embedding -> cache search -> recommendations
 
 At runtime, the API embeds only the user query and searches a prebuilt exercise embedding cache. It does not re-embed every exercise per request.
 
+Raw exercises are the human-owned source of truth. Each raw exercise has a stable `exercise_id`, and embeddings remain derived cache/index data that can be rebuilt or incrementally refreshed.
+
 ## Highlights
 
 - Clean / hexagonal architecture with domain, application, ports, adapters, API, and CLI layers.
 - FastAPI backend with `GET /health` and `POST /recommend`.
+- Stable `exercise_id` identity for raw exercises and embedded cache entries.
 - Offline embedding cache build workflow.
 - JSONL and SQLite embedded cache support.
+- SQLite trigger-backed pending embedding update workflow for incremental cache maintenance.
 - Search port abstraction with JSONL and SQLite exact-search adapters.
 - Config-driven runtime through TOML.
-- CLI tools for importing data, building caches, running recommendations, and debugging retrieval behavior.
+- CLI tools for importing data, building caches, processing pending embedding updates, running recommendations, and debugging retrieval behavior.
 - Dockerized FastAPI runtime using mounted config/cache artifacts.
 - Local deterministic embeddings for fast smoke tests.
 - Sentence Transformers support for real local embedding models such as Qwen.
@@ -81,14 +85,14 @@ src/calisthenics_recommender/
 
 ### Main layers
 
-- `domain/`: validated core data objects such as exercises, user requests, embedded exercises, search results, and recommendations.
-- `application/`: use cases, query/exercise text building, filtering, similarity, deterministic explanations, and recommendation orchestration.
-- `ports/`: protocol interfaces for raw exercise repositories, embedded exercise repositories, search repositories, and embedding providers.
+- `domain/`: validated core data objects such as exercises, user requests, embedded exercises, pending embedding updates, search results, and recommendations.
+- `application/`: use cases, query/exercise text building, filtering, similarity, deterministic explanations, recommendation orchestration, and pending embedding update processing.
+- `ports/`: protocol interfaces for raw exercise repositories, embedded exercise repositories/search repositories, cache updating, pending update repositories, exercise lookup, and embedding providers.
 - `adapters/`: concrete CSV, SQLite, JSONL, local deterministic embedding, fake embedding, and Sentence Transformers implementations.
 - `api/`: FastAPI request/response models, routes, and runtime app creation.
-- `cli/`: developer/operator commands for import, cache build, demo recommendations, and debugging.
+- `cli/`: developer/operator commands for import, cache build, pending update processing, demo recommendations, and debugging.
 
-The API and CLI layers stay thin. Recommendation logic lives in the application layer. Storage, embedding, and search implementations are selected through ports, adapters, wiring, and config.
+The API and CLI layers stay thin. Recommendation and cache-maintenance logic lives in the application layer. Storage, embedding, and search implementations are selected through ports, adapters, wiring, and config.
 
 ## Current Pipeline
 
@@ -120,6 +124,22 @@ POST /recommend
 
 Runtime embeds only the user query. It does not re-embed every exercise per request.
 
+### Incremental Pending Update Processing
+
+For SQLite raw exercises and a SQLite embedded cache, raw exercise row changes can be processed incrementally:
+
+```text
+raw SQLite exercise insert/update/delete
+-> SQLite trigger records pending work by exercise_id
+-> process-pending-embedding-updates
+-> Python workflow embeds changed exercise text
+-> SQLite embedded cache upsert/delete
+```
+
+SQLite triggers only record pending work in `pending_embedding_updates`. They do not call embedding providers and do not mutate the embedded cache directly.
+
+This workflow is intended for operator-driven cache maintenance. `/recommend` remains read-only and serves from a prebuilt embedded cache.
+
 ## Data And Cache Convention
 
 Raw CSV input should live under:
@@ -150,6 +170,20 @@ data/cache/calisthenics_qwen_cache.sqlite
 ```
 
 The raw dataset, generated SQLite databases, and generated embedded caches are local artifacts and are intentionally not committed.
+
+## Raw Exercise Identity
+
+Every raw exercise has a required stable `exercise_id`, for example:
+
+```text
+pull-up
+dip
+front-lever-row
+```
+
+`exercise_id` is the logical identity used to link raw exercises to derived embedded cache entries. It should remain stable across display-name changes. Human-facing fields such as `name`, `description`, equipment, categories, and families can change; the embedding cache can then be rebuilt or incrementally refreshed for the same stable exercise identity.
+
+Embeddings are not stored in raw exercise rows. They are generated artifacts owned by the embedded cache.
 
 ## Requirements
 
@@ -187,7 +221,7 @@ First use may download model files through Sentence Transformers. No OpenAI API 
 
 ## Configuration
 
-`build-exercise-cache`, `demo-recommend`, `debug-recommendations`, and the FastAPI runtime can use TOML config for backend and embedding settings.
+`build-exercise-cache`, `process-pending-embedding-updates`, `demo-recommend`, `debug-recommendations`, and the FastAPI runtime can use TOML config for backend and embedding settings.
 
 Example config:
 
@@ -257,6 +291,22 @@ uv run build-exercise-cache `
 uv run build-exercise-cache --config .\runtime.toml
 ```
 
+### Process Pending Embedding Updates
+
+For SQLite raw exercises and a SQLite embedded cache, process trigger-recorded pending updates:
+
+```powershell
+uv run process-pending-embedding-updates --config .\runtime.toml
+```
+
+Limit the number of pending rows processed in one run:
+
+```powershell
+uv run process-pending-embedding-updates --config .\runtime.toml --limit 10
+```
+
+This command is SQLite-only. It expects the config to use a SQLite raw exercise source and a SQLite embedded cache. It validates embedded-cache metadata before writing, so incompatible cache/config combinations should be rebuilt with `build-exercise-cache` instead of being mixed silently.
+
 ### Run CLI Recommendation Demo With Config
 
 ```powershell
@@ -286,7 +336,6 @@ Inspect top retrieval candidates:
 
 ```powershell
 uv run debug-recommendations `
-  --config .\runtime.toml `
   --target-family "Pull-up" `
   --goal "I want to build pulling strength and improve my strict pull-ups." `
   --current-level "I can do a few strict pull-ups but my last reps are slow." `
@@ -331,6 +380,8 @@ Invoke-RestMethod `
 ## Run FastAPI With Docker
 
 The Docker image runs only the FastAPI runtime. Build embedded caches offline with the CLI, then mount the runtime config and cache into the container. The API container does not rebuild exercise embeddings on startup.
+
+The API runtime remains read-only against the mounted embedded cache. The pending update processor is a separate operator workflow and is not run by the API container.
 
 The default Docker smoke test uses local deterministic embeddings and a SQLite embedded cache so it does not depend on Qwen, Hugging Face, internet access, or model cache availability.
 
@@ -427,3 +478,4 @@ The same image can run with `sentence-transformer` / Qwen if the runtime config 
 
 - `v1-local-api-mvp`: stable v1 baseline with JSONL cache, app-layer exact top-K retrieval, CLI, and FastAPI local runtime.
 - `v2-dockerized-backend`: polished backend version with SQLite embedded cache support, search port, JSONL/SQLite search adapters, config-driven CLI/API runtime, and Dockerized FastAPI serving.
+- `v3-incremental-embedding-cache`: stable exercise identity plus SQLite trigger-backed pending embedding update processing for incremental cache maintenance.
