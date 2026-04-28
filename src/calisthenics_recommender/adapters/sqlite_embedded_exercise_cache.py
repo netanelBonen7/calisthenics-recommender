@@ -61,6 +61,41 @@ class SQLiteEmbeddedExerciseCache:
             written_count,
         )
 
+    def upsert_embedded_exercise(
+        self,
+        embedded_exercise: EmbeddedExercise,
+        metadata: EmbeddedExerciseCacheMetadata,
+    ) -> None:
+        if not isinstance(metadata, EmbeddedExerciseCacheMetadata):
+            raise ValueError("metadata must be an EmbeddedExerciseCacheMetadata")
+        _raise_if_cache_path_missing(self._cache_path)
+
+        with sqlite3.connect(self._cache_path) as connection:
+            connection.row_factory = sqlite3.Row
+            actual_metadata = _read_metadata_from_connection(
+                connection=connection,
+                cache_path=self._cache_path,
+            )
+            _validate_metadata_matches(
+                actual_metadata=actual_metadata,
+                expected_metadata=metadata,
+                cache_path=self._cache_path,
+            )
+            _upsert_embedded_exercise(
+                connection=connection,
+                embedded_exercise=embedded_exercise,
+                expected_dimension=metadata.embedding_dimension,
+            )
+
+    def delete_embedded_exercise(self, exercise_id: str) -> None:
+        _raise_if_cache_path_missing(self._cache_path)
+
+        with sqlite3.connect(self._cache_path) as connection:
+            connection.execute(
+                "DELETE FROM embedded_exercises WHERE exercise_id = ?",
+                (exercise_id,),
+            )
+
 
 class SQLiteEmbeddedExerciseRepository:
     def __init__(
@@ -194,12 +229,6 @@ def _insert_embedded_exercise(
             f"Invalid SQLite embedded exercise row {row_number}: expected EmbeddedExercise"
         )
 
-    embedding = _parse_embedding_payload(
-        payload=list(embedded_exercise.embedding),
-        expected_dimension=expected_dimension,
-        row_label=f"row {row_number}",
-    )
-    exercise = embedded_exercise.exercise
     connection.execute(
         """
         INSERT INTO embedded_exercises (
@@ -223,16 +252,95 @@ def _insert_embedded_exercise(
             :embedding
         )
         """,
-        {
-            "exercise_id": exercise.exercise_id,
-            "name": exercise.name,
-            "description": exercise.description,
-            "muscle_groups": json.dumps(exercise.muscle_groups),
-            "families": json.dumps(exercise.families),
-            "materials": json.dumps(exercise.materials),
-            "categories": json.dumps(exercise.categories),
-            "embedding": json.dumps(list(embedding)),
-        },
+        _embedded_exercise_parameters(
+            embedded_exercise=embedded_exercise,
+            expected_dimension=expected_dimension,
+            row_label=f"row {row_number}",
+        ),
+    )
+
+
+def _upsert_embedded_exercise(
+    connection: sqlite3.Connection,
+    embedded_exercise: EmbeddedExercise,
+    expected_dimension: int,
+) -> None:
+    if not isinstance(embedded_exercise, EmbeddedExercise):
+        raise ValueError("embedded_exercise must be an EmbeddedExercise")
+
+    connection.execute(
+        """
+        INSERT INTO embedded_exercises (
+            exercise_id,
+            name,
+            description,
+            muscle_groups,
+            families,
+            materials,
+            categories,
+            embedding
+        )
+        VALUES (
+            :exercise_id,
+            :name,
+            :description,
+            :muscle_groups,
+            :families,
+            :materials,
+            :categories,
+            :embedding
+        )
+        ON CONFLICT(exercise_id) DO UPDATE SET
+            name = excluded.name,
+            description = excluded.description,
+            muscle_groups = excluded.muscle_groups,
+            families = excluded.families,
+            materials = excluded.materials,
+            categories = excluded.categories,
+            embedding = excluded.embedding
+        """,
+        _embedded_exercise_parameters(
+            embedded_exercise=embedded_exercise,
+            expected_dimension=expected_dimension,
+            row_label=f"exercise_id {embedded_exercise.exercise.exercise_id}",
+        ),
+    )
+
+
+def _embedded_exercise_parameters(
+    embedded_exercise: EmbeddedExercise,
+    expected_dimension: int,
+    row_label: str,
+) -> dict[str, str]:
+    embedding = _parse_embedding_payload(
+        payload=list(embedded_exercise.embedding),
+        expected_dimension=expected_dimension,
+        row_label=row_label,
+    )
+    exercise = embedded_exercise.exercise
+    return {
+        "exercise_id": exercise.exercise_id,
+        "name": exercise.name,
+        "description": exercise.description,
+        "muscle_groups": json.dumps(exercise.muscle_groups),
+        "families": json.dumps(exercise.families),
+        "materials": json.dumps(exercise.materials),
+        "categories": json.dumps(exercise.categories),
+        "embedding": json.dumps(list(embedding)),
+    }
+
+
+def _validate_metadata_matches(
+    actual_metadata: EmbeddedExerciseCacheMetadata,
+    expected_metadata: EmbeddedExerciseCacheMetadata,
+    cache_path: Path,
+) -> None:
+    if actual_metadata == expected_metadata:
+        return
+
+    raise ValueError(
+        "SQLite embedded exercise cache metadata is incompatible with the "
+        f"current embedding config for {cache_path}; run a full cache rebuild"
     )
 
 

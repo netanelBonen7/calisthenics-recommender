@@ -21,4 +21,7 @@ def test_pyproject_declares_build_backend_and_cli_entry_points() -> None:
         "import-exercises-to-sqlite": (
             "calisthenics_recommender.cli.import_exercises_to_sqlite:main"
         ),
+        "process-pending-embedding-updates": (
+            "calisthenics_recommender.cli.process_pending_embedding_updates:main"
+        ),
     }

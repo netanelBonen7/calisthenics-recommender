@@ -30,16 +30,28 @@ from calisthenics_recommender.adapters.sqlite_embedded_exercise_search_repositor
 from calisthenics_recommender.adapters.sqlite_exercise_repository import (
     SQLiteExerciseRepository,
 )
+from calisthenics_recommender.adapters.sqlite_pending_embedding_update_repository import (
+    SQLitePendingEmbeddingUpdateRepository,
+)
 from calisthenics_recommender.config import (
     EmbeddedCacheConfig,
     EmbeddingConfig,
     RawExercisesConfig,
 )
+from calisthenics_recommender.ports.embedded_exercise_cache_updater import (
+    EmbeddedExerciseCacheUpdater,
+)
 from calisthenics_recommender.ports.embedding_provider import EmbeddingProvider
 from calisthenics_recommender.ports.embedded_exercise_search_repository import (
     EmbeddedExerciseSearchRepository,
 )
+from calisthenics_recommender.ports.exercise_lookup_repository import (
+    ExerciseLookupRepository,
+)
 from calisthenics_recommender.ports.exercise_repository import ExerciseRepository
+from calisthenics_recommender.ports.pending_embedding_update_repository import (
+    PendingEmbeddingUpdateRepository,
+)
 
 
 def build_exercise_repository(
@@ -56,6 +68,32 @@ def build_embedded_exercise_cache_writer(
     if embedded_cache_config.backend == "sqlite":
         return SQLiteEmbeddedExerciseCache(embedded_cache_config.path)
     return LocalEmbeddedExerciseCache(embedded_cache_config.path)
+
+
+def build_exercise_lookup_repository(
+    raw_exercises_config: RawExercisesConfig,
+) -> ExerciseLookupRepository:
+    if raw_exercises_config.backend != "sqlite":
+        raise ValueError("Pending embedding update processing requires SQLite raw exercises")
+    return SQLiteExerciseRepository(raw_exercises_config.path)
+
+
+def build_pending_embedding_update_repository(
+    raw_exercises_config: RawExercisesConfig,
+) -> PendingEmbeddingUpdateRepository:
+    if raw_exercises_config.backend != "sqlite":
+        raise ValueError("Pending embedding update processing requires SQLite raw exercises")
+    return SQLitePendingEmbeddingUpdateRepository(raw_exercises_config.path)
+
+
+def build_embedded_exercise_cache_updater(
+    embedded_cache_config: EmbeddedCacheConfig,
+) -> EmbeddedExerciseCacheUpdater:
+    if embedded_cache_config.backend != "sqlite":
+        raise ValueError(
+            "Pending embedding update processing requires a SQLite embedded cache"
+        )
+    return SQLiteEmbeddedExerciseCache(embedded_cache_config.path)
 
 
 def build_embedded_exercise_search_repository(

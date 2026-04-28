@@ -398,6 +398,73 @@ def test_sqlite_embedded_exercise_cache_replaces_existing_contents(tmp_path):
     assert [item.exercise.name for item in loaded] == ["Dip"]
 
 
+def test_sqlite_embedded_exercise_cache_upserts_incremental_records(tmp_path):
+    SQLiteEmbeddedExerciseCache = get_sqlite_embedded_exercise_cache()
+    SQLiteEmbeddedExerciseRepository = get_sqlite_embedded_exercise_repository()
+    cache_path = tmp_path / "embedded_exercises.sqlite"
+    metadata = make_metadata()
+    cache = SQLiteEmbeddedExerciseCache(cache_path)
+    cache.write_embedded_exercises([], metadata)
+
+    cache.upsert_embedded_exercise(
+        make_embedded_exercise(
+            exercise_id="pull-up",
+            name="Pull Up",
+            embedding=[1.0, 0.0, 0.0],
+        ),
+        metadata,
+    )
+    cache.upsert_embedded_exercise(
+        make_embedded_exercise(
+            exercise_id="pull-up",
+            name="Strict Pull Up",
+            embedding=[0.8, 0.2, 0.0],
+        ),
+        metadata,
+    )
+
+    loaded = list(SQLiteEmbeddedExerciseRepository(cache_path).iter_embedded_exercises())
+
+    assert len(loaded) == 1
+    assert loaded[0].exercise.exercise_id == "pull-up"
+    assert loaded[0].exercise.name == "Strict Pull Up"
+    assert loaded[0].embedding == (0.8, 0.2, 0.0)
+
+
+def test_sqlite_embedded_exercise_cache_deletes_incremental_records_idempotently(
+    tmp_path,
+):
+    SQLiteEmbeddedExerciseCache = get_sqlite_embedded_exercise_cache()
+    SQLiteEmbeddedExerciseRepository = get_sqlite_embedded_exercise_repository()
+    cache_path = tmp_path / "embedded_exercises.sqlite"
+    metadata = make_metadata()
+    cache = SQLiteEmbeddedExerciseCache(cache_path)
+    cache.write_embedded_exercises(
+        [make_embedded_exercise(exercise_id="pull-up", name="Pull Up")],
+        metadata,
+    )
+
+    cache.delete_embedded_exercise("pull-up")
+    cache.delete_embedded_exercise("pull-up")
+
+    assert list(SQLiteEmbeddedExerciseRepository(cache_path).iter_embedded_exercises()) == []
+
+
+def test_sqlite_embedded_exercise_cache_rejects_incremental_metadata_mismatch(
+    tmp_path,
+):
+    SQLiteEmbeddedExerciseCache = get_sqlite_embedded_exercise_cache()
+    cache_path = tmp_path / "embedded_exercises.sqlite"
+    cache = SQLiteEmbeddedExerciseCache(cache_path)
+    cache.write_embedded_exercises([], make_metadata(embedding_model="first-model"))
+
+    with pytest.raises(ValueError, match=r"metadata|full cache rebuild"):
+        cache.upsert_embedded_exercise(
+            make_embedded_exercise(exercise_id="pull-up", name="Pull Up"),
+            make_metadata(embedding_model="second-model"),
+        )
+
+
 def test_sqlite_embedded_exercise_cache_replaces_legacy_schema_without_exercise_id(
     tmp_path,
 ):
